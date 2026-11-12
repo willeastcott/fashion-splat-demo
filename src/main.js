@@ -60,10 +60,10 @@ const fail = (message, err) => {
     throw err;
 };
 
-// WebGPU sorts on the GPU, is about twice as fast, and is the only path with bloom. It has been
-// run through all three WebGPU implementations on a desktop (Chrome's, Firefox's and Safari's)
-// and through Safari's on an iPhone 14 Pro, so it is tried first everywhere, with WebGL2 behind
-// it. No Android phone has been tried.
+// WebGPU sorts on the GPU, and is about twice as fast. It has been run through all three
+// WebGPU implementations on a desktop (Chrome's, Firefox's and Safari's) and through Safari's
+// on an iPhone 14 Pro, so it is tried first everywhere, with WebGL2 behind it. No Android phone
+// has been tried.
 const deviceTypes = params.get('device') ? [params.get('device')] : ['webgpu', 'webgl2'];
 
 let device;
@@ -181,10 +181,8 @@ const controls = camera.script.create(CameraControls, {
     }
 });
 
-// ---- studio: floor, shadows, bloom ----------------------------------------------------------
+// ---- studio: floor, shadows ---------------------------------------------------------------
 const stage = new Stage(app, camera);
-// where the effects cannot run, the page's own vignette stands in for theirs
-document.body.classList.toggle('plain', !stage.capable);
 
 // ---- rig -----------------------------------------------------------------------------------
 const rig = new Rig(defs[0]);
@@ -197,7 +195,6 @@ const el = id => /** @type {HTMLInputElement} */ (document.getElementById(id));
 const ui = {
     attract: el('attract'),
     present: el('present'),
-    effects: el('effects'),
     cycle: el('cycle'),
     spin: el('spin'),
     labels: el('labels'),
@@ -211,8 +208,6 @@ const ui = {
 };
 // ?attract=0 keeps the demo still until it is touched, for embedding or for a fixed view
 if (params.get('attract') === '0') ui.attract.checked = false;
-// ?effects=0 starts with bloom and the vignette off
-if (params.get('effects') === '0') ui.effects.checked = false;
 ui.intensity.addEventListener('input', () => {
     ui.intensityValue.textContent = Number(ui.intensity.value).toFixed(1);
 });
@@ -379,7 +374,6 @@ app.on('update', (dt) => {
                 `pack      ${loadedTier}, ${morph.count.toLocaleString()} slots${morph.sh ? `, view-dependent colour ${morph.viewColour ? 'on' : 'off'}` : ''}`,
                 `outfits   ${morph.ready.filter(Boolean).length} of ${morph.ready.length} loaded`,
                 `canvas    ${canvas.width}x${canvas.height} at ${device.maxPixelRatio.toFixed(2)}x`,
-                `effects   ${stage.effects ? 'bloom and vignette on' : stage.capable ? 'off' : 'off on WebGL2, to keep colours true'}`,
                 `fps       ${meter.fps} (lowest ${Number.isFinite(meter.worst) ? meter.worst : 'not measured yet'})${morph.busy ? ' morphing' : ''}`,
                 `problems  ${problems.length ? problems.join(' | ') : 'none'}`
             ].join('\n');
@@ -461,7 +455,6 @@ app.on('update', (dt) => {
     callouts.update(dt, { camera, figure, rig, morph });
     shop.update(morph);
 
-    stage.effects = ui.effects.checked;
     stage.update({ figure, rig, morph });
 
     material.update();

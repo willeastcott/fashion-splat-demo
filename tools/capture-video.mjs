@@ -20,12 +20,14 @@
 // The clip: the first outfit for a second, then a change of outfit straight away (the part
 // worth stopping for), then the show as it runs: in to each piece, back out, on to the next
 // outfit, and round to the first again, where it ends.
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import puppeteer from 'puppeteer-core';
+
+import { install as installEdit } from './social-edit.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const arg = (name, fallback) => {
@@ -40,8 +42,16 @@ const crf = Number(arg('crf', 14));
 const detail = arg('detail', 'sh');
 const dry = arg('dry', false);
 const test = arg('test', false);
-const url = arg('url', `http://localhost:5183/?detail=${detail}&present`);
-const out = join(root, arg('out', `media/clip-${shape}.mp4`));
+// --edit=social films the directed cut in tools/social-edit.mjs instead of the show as it runs;
+// --music=<file> lays a track under it (--music-offset=<s> skips into the track, to put a beat
+// on the first frame); --stills=<folder> photographs the start, middle and end of each shot
+// of the cut instead of filming it, for a look at the framing
+const edit = arg('edit', false);
+const music = arg('music', false);
+const musicOffset = Number(arg('music-offset', 0));
+const stills = arg('stills', false);
+const url = arg('url', `http://localhost:5183/?detail=${detail}&${edit ? 'attract=0' : 'present'}`);
+const out = join(root, arg('out', edit ? `media/clip-${edit}.mp4` : `media/clip-${shape}.mp4`));
 
 // the page is laid out at these CSS sizes and photographed at the scale that makes 1080p: the
 // vertical one is the phone layout at twice its size
@@ -133,14 +143,16 @@ try {
         window.__clip = {
             // one frame of the clip, drawn inside a real animation frame; resolves once the
             // browser has had a further frame in which to put it on screen
-            step: () => new Promise((resolve) => {
+            step: frame => new Promise((resolve) => {
                 window.__raf(() => {
+                    window.__direct?.(frame);
                     advance();
                     window.__raf(() => resolve(state()));
                 });
             }),
             // the same without waiting to be seen, for stepping through quickly
-            skip: () => {
+            skip: (frame) => {
+                window.__direct?.(frame);
                 advance();
                 return state();
             }
@@ -149,6 +161,8 @@ try {
     }, fps);
     console.log(`${about.renderer}, ${about.slots.toLocaleString()} slots, canvas ${about.canvas}, view-dependent colour ${about.viewColour ? 'on' : 'off'}`);
     if (about.renderer !== 'webgpu') console.log('warning: not on WebGPU, so no bloom, and the sort lags the camera');
+    const logo = `data:image/png;base64,${readFileSync(join(root, 'tools/brand/playcanvas-logo.png')).toString('base64')}`;
+    const cut = edit ? await page.evaluate(installEdit, fps, logo) : null;
 
     if (test) {
         // is a photograph taken straight after a step the frame that step drew?
@@ -160,6 +174,25 @@ try {
         const c = await page.screenshot({ type: 'png' });
         console.log(`same frame photographed twice: ${a.equals(b) ? 'identical (good)' : 'DIFFERENT (the first was stale)'}`);
         console.log(`next frame: ${a.equals(c) ? 'IDENTICAL (nothing moved)' : 'different (good)'}`);
+    } else if (stills) {
+        // a look at the cut: the first, middle and last frame of each shot
+        mkdirSync(stills, { recursive: true });
+        const wanted = new Map();
+        cut.shots.forEach(([t0, t1], i) => {
+            const a = Math.round(t0 * fps), b = Math.round(t1 * fps) - 1;
+            wanted.set(a, `${String(i + 1).padStart(2, '0')}a`);
+            wanted.set(Math.round((a + b) / 2), `${String(i + 1).padStart(2, '0')}b`);
+            wanted.set(b, `${String(i + 1).padStart(2, '0')}c`);
+        });
+        for (let frame = 0; frame < cut.seconds * fps; frame++) {
+            if (wanted.has(frame)) {
+                await page.evaluate(f => window.__clip.step(f), frame);
+                writeFileSync(join(stills, `shot-${wanted.get(frame)}.png`), await page.screenshot({ type: 'png' }));
+            } else {
+                await page.evaluate(f => window.__clip.skip(f), frame);
+            }
+        }
+        console.log(`wrote ${wanted.size} stills to ${stills}`);
     } else {
         if (!dry) {
             mkdirSync(dirname(out), { recursive: true });
@@ -171,16 +204,17 @@ try {
                 // posted to encode it again, so it is better over-fed than under
                 '-c:v', 'libx264', '-preset', 'slow', '-crf', String(crf), '-x264-params', 'aq-mode=3',
                 '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv',
-                '-movflags', '+faststart', out
+                '-movflags', '+faststart', music ? `${out}.picture.mp4` : out
             ], { stdio: ['pipe', 'inherit', 'inherit'] });
         }
 
         const started = Date.now();
         let frame = 0, left = false, endAt = Infinity, last = '';
+        if (cut) endAt = Math.round(cut.seconds * fps);
         while (frame < endAt && frame < LIMIT * fps) {
-            // the first change of outfit comes early; the show makes the rest
-            if (frame === Math.round(OPENING * fps)) await page.evaluate(() => window.demo.change(1));
-            const s = await page.evaluate(dry ? () => window.__clip.skip() : () => window.__clip.step());
+            // the show as it runs: the first change of outfit comes early, and it makes the rest
+            if (!cut && frame === Math.round(OPENING * fps)) await page.evaluate(() => window.demo.change(1));
+            const s = await page.evaluate(dry ? f => window.__clip.skip(f) : f => window.__clip.step(f), frame);
             if (!dry) {
                 const shot = await page.screenshot({ type: 'png', optimizeForSpeed: true });
                 if (!ffmpeg.stdin.write(shot)) await new Promise(r => ffmpeg.stdin.once('drain', r));
@@ -192,7 +226,7 @@ try {
             last = now;
             if (s.outfit !== 0) left = true;
             // back on the first outfit: hold it a moment, and stop before the show goes in again
-            if (left && s.outfit === 0 && !s.changing && endAt === Infinity) endAt = frame + Math.round(ENDING * fps);
+            if (!cut && left && s.outfit === 0 && !s.changing && endAt === Infinity) endAt = frame + Math.round(ENDING * fps);
             if (!dry && frame % 120 === 0) {
                 const per = (Date.now() - started) / frame;
                 console.log(`   frame ${frame}, ${(per / 1000).toFixed(2)} s a frame`);
@@ -202,6 +236,20 @@ try {
         if (ffmpeg) {
             ffmpeg.stdin.end();
             await new Promise(r => ffmpeg.once('close', r));
+            if (music) {
+                // the track under the picture, faded out over the last two seconds and brought
+                // to the loudness that video sites play at
+                const length = frame / fps;
+                const mixed = spawnSync('ffmpeg', [
+                    '-y', '-loglevel', 'error', '-i', `${out}.picture.mp4`, '-ss', String(musicOffset), '-i', music,
+                    '-filter:a', `atrim=0:${length},afade=t=in:d=0.03,afade=t=out:st=${(length - 2.2).toFixed(2)}:d=2.2,loudnorm=I=-14:TP=-1.5:LRA=11`,
+                    '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-shortest', '-movflags', '+faststart', `${out}.mixed.mp4`
+                ], { stdio: 'inherit' });
+                if (mixed.status !== 0) throw new Error('could not lay the music under the picture');
+                rmSync(out, { force: true });
+                renameSync(`${out}.mixed.mp4`, out);
+                rmSync(`${out}.picture.mp4`, { force: true });
+            }
             console.log(`wrote ${out}`);
         }
     }

@@ -34,11 +34,10 @@ Built with the [PlayCanvas](https://playcanvas.com) engine. The captures are by
 | `?present` | Start in presentation mode. |
 | `?attract=0` | Do not run by itself; stay still until touched. |
 | `?debug` | Show the renderer, pack, frame rate and any errors on the page. Useful on a phone. |
-| `?effects=0` | Start with bloom and the vignette off. |
 
-It uses WebGPU where the browser has it, and WebGL2 otherwise. On WebGL2 the bloom is left out,
-because the engine's post-effect path washes out dark splats there; everything else is the
-same.
+It uses WebGPU where the browser has it, and WebGL2 otherwise; the picture is the same on
+both. There are no post effects: bloom was tried, but the engine's post-effect path blends
+splats in linear light, which turns black cloth grey and grainy.
 
 Checked so far, on a Mac: WebGPU in Chrome, Firefox 156 and Safari 26; WebGL2 in Chrome and
 Firefox; and Safari on iOS 17 in the Simulator (WebGL2, including touch and both
@@ -47,12 +46,20 @@ detail runs at about 48 frames a second on WebGPU. No Android phone has been tri
 
 ## Clips
 
+[`media/clip-social.mp4`](media/clip-social.mp4) is a 28-second cut made for posting: 1080p,
+60 frames a second, with music. It is directed shot by shot (a morph to open, a piece a second
+on the beat, a turn round the figure, the shop) rather than a recording of the page, and ends
+on a card with the address and the credits. The shot list is in
+[`tools/social-edit.mjs`](tools/social-edit.mjs); `node tools/capture-video.mjs --edit=social`
+films it.
+
 [`media/clip-landscape.mp4`](media/clip-landscape.mp4) and
 [`media/clip-vertical.mp4`](media/clip-vertical.mp4) are 36-second, 1080p, 60 frames a second
 recordings of the demo running itself, rendered frame by frame rather than screen-recorded, with
 no sound. They are filmed at full detail with view-dependent colour, which is sharper in
-close-up than the standard detail the live page loads. They are there to be shared; please keep
-the capture credit with them.
+close-up than the standard detail the live page loads. These two were filmed before the bloom
+was taken out (see above), so dark cloth in them is greyer and grainier than the page now
+shows it. All three are there to be shared; please keep the capture credit with them.
 
 [`tools/capture-video.mjs`](tools/capture-video.mjs) makes them, with `npm run dev` running. It
 needs Chrome, ffmpeg and the `public/morph-sh` pack (see below).
@@ -99,7 +106,7 @@ palette: 47 MB for all three at the standard detail, 28 MB at the lite one. Rota
 colour and opacity come back bit-identical to what the GPU textures hold; positions are rounded
 to 0.1 mm. The first outfit is shown as soon as it arrives. See [`src/pack.js`](src/pack.js).
 
-The studio floor, contact shadows, bloom and the light the morph throws on the floor are in
+The studio floor, contact shadows and the light the morph throws on the floor are in
 [`src/stage.js`](src/stage.js). The shadows are soft shapes drawn at the rig's ankles, not cast
 by the splats.
 

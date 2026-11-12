@@ -25,9 +25,8 @@
         button, summary, label { touch-action: manipulation; }
         canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
-        /* stands in for the rendered vignette on WebGL2, where the post effects are off */
-        #vignette { display: none; position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse 75% 75% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.42) 130%); }
-        body.plain #vignette { display: block; }
+        /* laid over the canvas rather than rendered: see src/stage.js for why there are no post effects */
+        #vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse 75% 75% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.42) 130%); }
 
         /* callouts: lines in an svg, labels as elements, both placed from script every frame */
         #overlay { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
@@ -162,7 +161,6 @@
         <div class="controls">
             <label><input type="checkbox" id="attract" checked> Run by itself when idle</label>
             <label><input type="checkbox" id="present"> Presentation mode (P)</label>
-            <label><input type="checkbox" id="effects" checked> Bloom and vignette (WebGPU)</label>
             <label><input type="checkbox" id="cycle"> Cycle outfits</label>
             <label><input type="checkbox" id="spin"> Turn on change</label>
             <label><input type="checkbox" id="labels" checked> Callouts</label>

@@ -1,16 +1,21 @@
 import {
-    CameraFrame,
     Color,
     Entity,
     SEMANTIC_POSITION,
     ShaderMaterial,
-    TONEMAP_LINEAR,
     Vec3
 } from 'playcanvas';
 
 // The studio the figure stands in: a floor with a pool of light that fades into the backdrop
-// (so the floor has no visible edge), contact shadows under the shoes and the body, light on
-// the floor from the glowing wave of a morph, and bloom and a vignette over the frame.
+// (so the floor has no visible edge), contact shadows under the shoes and the body, and light
+// on the floor from the glowing wave of a morph.
+//
+// There are no post effects. Bloom and a rendered vignette were tried (the engine's
+// CameraFrame), but they draw the scene into a linear-light target first, and splats are made
+// to be blended as the display shows them: blended in linear light, the faint pale gaussians
+// layered through dark cloth count for far more than they should, and black cloth comes out
+// grey and grainy. That holds on WebGPU and WebGL2 alike. The vignette is laid over the
+// canvas by the page instead (#vignette in index.html).
 //
 // The shadows are not cast by the splats. They are soft shapes drawn into the floor at the
 // rig's ankle joints, which is cheap and holds up because the feet never leave the floor.
@@ -148,9 +153,6 @@ fn fragmentMain(input: FragmentInput) -> FragmentOutput {
 }
 `;
 
-// exact inverse of the sRGB curve the engine writes its output with
-const toLinear = c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
-
 const p = new Vec3();
 const q = new Vec3();
 
@@ -190,48 +192,9 @@ export class Stage {
         app.root.addChild(floor);
         this.floor = floor;
 
-        // Bloom and the vignette render the scene to a linear-light target first. On WebGPU
-        // the splats come through that unchanged. On WebGL2 they do not: dark, faintly
-        // layered cloth comes out washed and grainy (seen in iOS Safari and in Chrome's
-        // WebGL2 alike). So on WebGL2 the scene is drawn straight to the screen, and the page
-        // lays a plain vignette over the canvas instead (see #vignette in index.html).
-        this.capable = app.graphicsDevice.isWebGPU;
-
-        // bloom picks out what is brighter than white, which is the dots and waves of a morph
-        const frame = new CameraFrame(app, camera.camera);
-        frame.rendering.samples = 1;
-        frame.rendering.toneMapping = TONEMAP_LINEAR;
-        frame.bloom.intensity = 0.05;
-        frame.bloom.threshold = 1.0;
-        frame.vignette.intensity = 0.45;
-        frame.vignette.inner = 0.55;
-        frame.vignette.outer = 1.45;
-        frame.vignette.curvature = 0.7;
-        frame.enabled = this.capable;
-        frame.update();
-        this.frame = frame;
-        this._applyBackdrop();
-    }
-
-    /** Whether bloom and the vignette are on. They can only be on where `capable` is true. */
-    get effects() {
-        return this.frame.enabled;
-    }
-
-    set effects(on) {
-        on = on && this.capable;
-        if (on === this.frame.enabled) return;
-        this.frame.enabled = on;
-        this.frame.update();
-        this._applyBackdrop();
-    }
-
-    // With the effects on, the scene is rendered in linear light and the clear colour is taken
-    // as it is; without them it is rendered for the display directly.
-    _applyBackdrop() {
+        // the scene is drawn straight to the screen, so the clear colour is taken as it is
         const [r, g, b] = this.backdrop;
-        const c = this.frame.enabled ? new Color(toLinear(r), toLinear(g), toLinear(b)) : new Color(r, g, b);
-        this.camera.camera.clearColor = c;
+        camera.camera.clearColor = new Color(r, g, b);
     }
 
     /**
