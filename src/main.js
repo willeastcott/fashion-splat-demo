@@ -286,12 +286,7 @@ window.addEventListener('resize', () => {
     PIVOT.y = frame.height;
     director.distance = frame.distance - 0.05;
     if (!director.active) {
-        // let go of any piece that was picked. If the camera was on its way to or from one,
-        // the controls are off and have lost track of it: have them take it up where it is
-        if (closeup.state === 'in' || closeup.state === 'out') {
-            controls.enabled = true;
-            controls.focusPoint = closeup.focus;
-        }
+        // let go of any piece that was picked: the controls have the camera wherever it is
         closeup.cancel();
         callouts.pinned = -1;
         const back = camera.forward.clone().mulScalar(-frame.distance).add(PIVOT);
