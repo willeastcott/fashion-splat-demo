@@ -48,9 +48,14 @@ detail runs at about 48 frames a second on WebGPU. No Android phone has been tri
 ## Clips
 
 [`media/clip-landscape.mp4`](media/clip-landscape.mp4) and
-[`media/clip-vertical.mp4`](media/clip-vertical.mp4) are 30-second, 1080p recordings of the demo
-running itself at full detail, rendered frame by frame rather than screen-recorded. They are
-there to be shared; please keep the capture credit with them.
+[`media/clip-vertical.mp4`](media/clip-vertical.mp4) are 36-second, 1080p, 60 frames a second
+recordings of the demo running itself, rendered frame by frame rather than screen-recorded, with
+no sound. They are filmed at full detail with view-dependent colour, which is sharper in
+close-up than the standard detail the live page loads. They are there to be shared; please keep
+the capture credit with them.
+
+[`tools/capture-video.mjs`](tools/capture-video.mjs) makes them, with `npm run dev` running. It
+needs Chrome, ffmpeg and the `public/morph-sh` pack (see below).
 
 ## How it works
 
