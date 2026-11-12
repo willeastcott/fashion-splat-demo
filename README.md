@@ -4,7 +4,7 @@ Three real outfits, captured as Gaussian splats, on one figure in your browser. 
 breathes and shifts its weight, its head follows your camera, every piece is labelled, and one
 outfit morphs into the next.
 
-**[Open the live demo](https://willeastcott.github.io/fashion-splat-demo/)**
+**[Open the live demo](https://willeastcott.github.io/splat-fashion/)**
 
 ![An outfit morphing into the next, with product callouts following the figure](media/morph.gif)
 
