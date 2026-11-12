@@ -27,15 +27,19 @@ Built with the [PlayCanvas](https://playcanvas.com) engine. The captures are by
 | Add to the address | Effect |
 |---|---|
 | `?detail=lite` / `standard` / `full` | 500k, 1M or about 2.9M gaussians per outfit. Phones get `lite` by default, everything else `standard`. |
-| `?device=webgl2` | Use WebGL2 instead of WebGPU. |
+| `?device=webgl2` / `webgpu` | Force a renderer. |
 | `?present` | Start in presentation mode. |
 | `?attract=0` | Do not run by itself; stay still until touched. |
 | `?debug` | Show the renderer, pack, frame rate and any errors on the page. Useful on a phone. |
 | `?effects=0` | Start with bloom and the vignette off. |
 
-It runs best where WebGPU is available (recent Chrome, Edge and Safari) and falls back to
-WebGL2 elsewhere. On WebGL2 the bloom is left out, because the engine's post-effect path
-washes out dark splats there; everything else is the same.
+It uses WebGPU in Chromium browsers (Chrome, Edge and the like) and WebGL2 everywhere else.
+Safari and Firefox have WebGPU too, but this demo has not been tested on theirs, so they get
+WebGL2 unless you add `?device=webgpu`. On WebGL2 the bloom is left out, because the engine's
+post-effect path washes out dark splats there; everything else is the same.
+
+Checked so far: Chrome (WebGPU and WebGL2), Firefox 156 (WebGL2), and Safari on iOS 17 in the
+Simulator (WebGL2, including touch and both orientations). Not yet run on a physical phone.
 
 ## Clips
 

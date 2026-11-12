@@ -59,11 +59,18 @@ const fail = (message, err) => {
     throw err;
 };
 
+// WebGPU sorts on the GPU and is close to twice as fast, but this demo's shaders have only
+// been run through Chromium's WebGPU. Safari and Firefox compile WGSL with compilers of their
+// own, which have not been tried, so those browsers take the WebGL2 path, which has been
+// checked in both. ?device=webgpu tries WebGPU anywhere; if it holds up in Safari and Firefox,
+// this guard can go.
+const chromium = /\bChrome\//.test(navigator.userAgent) && !/\bFirefox\//.test(navigator.userAgent);
+const deviceTypes = params.get('device') ? [params.get('device')] : (chromium ? ['webgpu', 'webgl2'] : ['webgl2']);
+
 let device;
 try {
     device = await createGraphicsDevice(canvas, {
-        // WebGPU sorts on the GPU and is close to twice as fast here; WebGL2 is the fallback
-        deviceTypes: params.get('device') ? [params.get('device')] : ['webgpu', 'webgl2'],
+        deviceTypes,
         // gaussian splats do not benefit from MSAA
         antialias: false
     });
@@ -321,7 +328,7 @@ app.on('update', (dt) => {
             meter.frames = 0;
             meter.since = now;
             debug.textContent = [
-                `renderer  ${device.deviceType}${navigator.gpu ? '' : ' (no WebGPU here)'}`,
+                `renderer  ${device.deviceType}${device.isWebGPU ? '' : navigator.gpu ? (deviceTypes.includes('webgpu') ? ' (WebGPU failed to start)' : ' (WebGPU not tried in this browser: add ?device=webgpu)') : ' (no WebGPU here)'}`,
                 `pack      ${loadedTier}, ${morph.count.toLocaleString()} slots`,
                 `outfits   ${morph.ready.filter(Boolean).length} of ${morph.ready.length} loaded`,
                 `canvas    ${canvas.width}x${canvas.height} at ${device.maxPixelRatio.toFixed(2)}x`,
