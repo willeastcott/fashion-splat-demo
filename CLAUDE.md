@@ -84,6 +84,11 @@ them if the look of the demo changes noticeably.
   phone with WebGL2 (what a phone without WebGPU gets), any older iPhone, and any Android
   phone. `?debug` shows renderer, pack, frame rate and errors on the page for checking a device
   by hand.
+- A close-up costs more to draw than the whole figure. The page lowers its resolution when
+  frames run slow, and tries a step back up after 20 s of fast ones, doubling that wait each
+  time it has to come down again (the frame loop in `src/main.js`). How a phone fares in
+  close-ups has not been measured: `?debug` shows the resolution in use, and the lowest frame
+  rate since the outfits finished loading.
 - To try a phone locally: `npx vite build`, then
   `npx vite preview --config vite.lan.config.js --host --port 5185` serves `dist` over https with
   a self-signed certificate. Plain http on the network will not do for WebGPU, which browsers

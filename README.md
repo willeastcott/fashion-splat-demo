@@ -19,7 +19,7 @@ Built with the [PlayCanvas](https://playcanvas.com) engine. The captures are by
 - **Drag to orbit, scroll or pinch to zoom.** The head turns to follow you, and labels move to
   whichever side of the body their piece is on. Orbit behind for the back of each outfit.
 - **Click or tap a label** and the camera comes in to frame that piece; drag to look round it,
-  and click or tap anywhere else to go back.
+  and click or tap anywhere else, or press Esc, to go back.
 - **Open Controls** (bottom left, desktop only) for the idle strength, a view of the rig's bone
   weights, and presentation mode.
 - **Press P** for presentation mode: the same self-running show with the controls and pointer

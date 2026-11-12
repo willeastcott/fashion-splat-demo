@@ -147,14 +147,14 @@ export class Closeup {
     }
 
     // start a move to looking at `focus`: from `pos` if given, otherwise from the angle the
-    // camera has now and `dist` away (and never further away than it is now)
+    // camera has now and `dist` away
     _move(state, focus, pos, dist) {
         const here = this.camera.getPosition();
         this.from = polar(here, this.focus);
         if (pos) {
             this.to = polar(pos, focus);
         } else {
-            this.to = { dist: Math.min(dist, this.from.dist), yaw: this.from.yaw, pitch: this.from.pitch };
+            this.to = { dist, yaw: this.from.yaw, pitch: this.from.pitch };
         }
         // turn the short way round
         let turn = this.to.yaw - this.from.yaw;
