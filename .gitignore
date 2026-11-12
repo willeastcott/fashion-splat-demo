@@ -5,4 +5,7 @@ dist
 raw
 analysis
 
+# every captured gaussian with view-dependent colour (125 MB), built locally for ?detail=sh
+public/morph-sh
+
 .DS_Store

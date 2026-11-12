@@ -4,6 +4,9 @@
 //   node tools/build-morph.mjs                   full captures        -> public/morph
 //   node tools/build-morph.mjs --variant=1m      raw/*/scene.1m.ply   -> public/morph-1m
 //   node tools/build-morph.mjs --variant=500k    raw/*/scene.500k.ply -> public/morph-500k
+// Add --sh to keep the colour that changes with the view as well. The lighter packs are
+// built that way (see tools/build-data.sh); the full captures with it go to public/morph-sh,
+// beside the pack without.
 //
 // There is no real correspondence between two separate captures, so one is manufactured from
 // the body layout the figures share:
@@ -19,17 +22,23 @@
 //
 // Output (public/morph): meta.json and one gzipped <figure>.pack per outfit, holding only that
 // outfit's own gaussians. The format is described in src/pack.js, which also decodes it.
-import { closeSync, mkdirSync, openSync, readSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
+
+import { Column, DataTable, MemoryFileSystem, Transform, WebPCodec, writeSog } from '@playcanvas/splat-transform';
 
 import { figureOrder, figures } from '../src/figures.js';
 import { PACK_VERSION, PLANES, decodeOutfit, largestByte } from '../src/pack.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const variant = (process.argv.find(a => a.startsWith('--variant=')) ?? '').slice('--variant='.length);
-const outDir = join(root, variant ? `public/morph-${variant}` : 'public/morph');
+// --sh keeps the captures' spherical harmonics (the part of the colour that changes with the
+// viewing direction) as a palette per outfit; see src/pack.js
+const withSH = process.argv.includes('--sh');
+// the full captures have a pack without it too (public/morph), so theirs goes beside that
+const outDir = join(root, variant ? `public/morph-${variant}` : withSH ? 'public/morph-sh' : 'public/morph');
 mkdirSync(outDir, { recursive: true });
 
 const BLOCKS_LEG = 9;        // floor..crotch, per leg
@@ -39,6 +48,8 @@ const SLICES = 20;           // equal-count height slices inside a block, about 
 const ANGLE_BINS = 96;
 const CELLS = BLOCKS_LEG * 2 + BLOCKS_TORSO + BLOCKS_HEAD;
 const SH_C0 = 0.28209479177387814;
+const SH_COEFFS = 15;        // per colour channel: bands 1 to 3
+const SH_ITERATIONS = 10;    // k-means passes, the number splat-transform uses when writing SOG
 
 // ---- PLY -----------------------------------------------------------------------------------
 const readPly = (path) => {
@@ -89,6 +100,173 @@ const readPly = (path) => {
     return { count, cols: Object.fromEntries(names.map((n, i) => [n === 'opacity' ? 'alpha' : n, cols[i]])) };
 };
 
+// Read some of a PLY's properties for some of its rows. `slot` says, for every row of the file,
+// where it goes in the output (or -1 to leave it out).
+const readPlyRows = (path, names, slot, n) => {
+    const fd = openSync(path, 'r');
+    const head = Buffer.alloc(8192);
+    readSync(fd, head, 0, head.length, 0);
+    const text = head.toString('latin1');
+    const end = text.indexOf('end_header\n');
+    const headerLen = end + 'end_header\n'.length;
+    let count = 0;
+    const props = [];
+    for (const line of text.slice(0, end).split('\n')) {
+        const t = line.trim().split(/\s+/);
+        if (t[0] === 'element' && t[1] === 'vertex') count = parseInt(t[2], 10);
+        if (t[0] === 'property') props.push(t[2]);
+    }
+    // a decimated capture holds opacity as 0..1 in opacity_linear (see readPly)
+    const linearOpacity = !props.includes('opacity') && props.includes('opacity_linear');
+    const offs = names.map((name) => {
+        const i = props.indexOf(name === 'opacity' && linearOpacity ? 'opacity_linear' : name);
+        if (i < 0) throw new Error(`PLY is missing ${name}`);
+        return i;
+    });
+    const cols = names.map(() => new Float32Array(n));
+    const np = props.length;
+    const CH = 65536;
+    const chunk = Buffer.alloc(CH * np * 4);
+    for (let base = 0; base < count; base += CH) {
+        const m = Math.min(CH, count - base);
+        readSync(fd, chunk, 0, m * np * 4, headerLen + base * np * 4);
+        const f = new Float32Array(chunk.buffer, chunk.byteOffset, m * np);
+        for (let i = 0; i < m; i++) {
+            const u = slot[base + i];
+            if (u < 0) continue;
+            for (let c = 0; c < names.length; c++) cols[c][u] = f[i * np + offs[c]];
+        }
+    }
+    closeSync(fd);
+    // hand opacity back the way a standard PLY holds it, as a logit
+    if (linearOpacity && names.includes('opacity')) {
+        const o = cols[names.indexOf('opacity')];
+        for (let u = 0; u < n; u++) {
+            const a = Math.max(1e-6, Math.min(1 - 1e-6, o[u]));
+            o[u] = Math.log(a / (1 - a));
+        }
+    }
+    return cols;
+};
+
+// ---- view-dependent colour -------------------------------------------------------------------
+// The captures hold 45 spherical harmonic coefficients per gaussian. Storing them outright
+// would be several times the rest of the pack, so they are clustered into a palette of up to
+// 65536 entries per outfit and each gaussian keeps a 16-bit index into it. The clustering is
+// splat-transform's, the one behind the SOG files SuperSplat publishes: the outfit is handed
+// to its SOG writer in pairing order and the palette and labels are read back out of the
+// result (the layout is the published SOG format's).
+//
+// The clustering runs on the GPU, through Dawn (the "webgpu" package), the way splat-transform's
+// own command line does it. On the CPU it would take hours.
+let gpuDevice = null;
+const createDevice = async () => {
+    if (!gpuDevice) {
+        const { create, globals } = await import('webgpu');
+        const { WebgpuGraphicsDevice } = await import('playcanvas');
+        // the engine expects a browser: give it just enough of one
+        Object.assign(globalThis, globals);
+        const canvas = { getContext: () => null, getBoundingClientRect: () => ({ left: 0, top: 0, width: 300, height: 150, right: 300, bottom: 150 }), width: 1024, height: 512 };
+        globalThis.window = { navigator: { userAgent: 'node.js', gpu: create([]) } };
+        globalThis.document = { createElement: type => (type === 'canvas' ? canvas : undefined) };
+        const device = new WebgpuGraphicsDevice(canvas, { antialias: false, depth: false, stencil: false });
+        await device.createDevice();
+        // a GPU error would otherwise pass silently and leave a corrupt palette
+        device.wgpu?.addEventListener?.('uncapturederror', (ev) => {
+            console.error(`WebGPU error: ${ev?.error?.message}`);
+            process.exit(1);
+        });
+        gpuDevice = device;
+    }
+    return gpuDevice;
+};
+
+const clusterSH = async (f) => {
+    const n = f.count;
+    const slot = new Int32Array(f.sourceCount).fill(-1);
+    for (let u = 0; u < n; u++) slot[f.keep[f.order[u]]] = u;
+
+    // The clustering takes minutes, and its result only changes if the capture or the pairing
+    // order does: keep it beside the capture, under a fingerprint of that order.
+    let hash = 2166136261;
+    for (let u = 0; u < n; u++) hash = Math.imul(hash ^ f.keep[f.order[u]], 16777619) >>> 0;
+    const cachePath = f.path.replace(/\.ply$/, `.sh-${SH_ITERATIONS}-${n}-${hash.toString(16)}.cache`);
+    if (existsSync(cachePath)) {
+        const buf = readFileSync(cachePath);
+        const headLen = buf.readUInt32LE(0);
+        const head = JSON.parse(buf.subarray(4, 4 + headLen).toString('utf8'));
+        const body = buf.subarray(4 + headLen);
+        const labels = new Uint16Array(n);
+        for (let u = 0; u < n; u++) labels[u] = body.readUInt16LE(u * 2);
+        console.log(`${f.name}: SH palette of ${head.count} (from ${basename(cachePath)}), error ${head.error}% of the signal (rms)`);
+        return { labels, palette: new Uint8Array(body.subarray(n * 2)), count: head.count, codebook: head.codebook };
+    }
+
+    const names = ['x', 'y', 'z', 'scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3', 'opacity', 'f_dc_0', 'f_dc_1', 'f_dc_2'];
+    const rest0 = names.length;
+    for (let i = 0; i < SH_COEFFS * 3; i++) names.push(`f_rest_${i}`);
+    const cols = readPlyRows(f.path, names, slot, n);
+
+    const fs = new MemoryFileSystem();
+    const indices = new Uint32Array(n);
+    for (let u = 0; u < n; u++) indices[u] = u;
+    await writeSog({
+        // the columns are a PLY's, so say so: by default the writer takes a table to be in the
+        // engine's axes and would turn it (harmonics included) into a PLY's
+        dataTable: new DataTable(names.map((name, i) => new Column(name, cols[i])), Transform.PLY),
+        filename: 'meta.json',
+        bundle: false,
+        iterations: SH_ITERATIONS,
+        version: 2,
+        indices,
+        createDevice,
+        logging: 'silent'
+    }, fs);
+    const file = (name) => {
+        for (const [key, data] of fs.results) if (key.replace(/\\/g, '/').endsWith(name)) return data;
+        throw new Error(`${f.name}: the SOG writer did not produce ${name}`);
+    };
+    const shN = JSON.parse(Buffer.from(file('meta.json')).toString('utf8')).shN;
+    if (!shN || shN.bands !== 3 || shN.count > 65536) throw new Error(`${f.name}: unexpected SH palette`);
+    const codec = await WebPCodec.create();
+    // a decoded image is only good until the next decode: copy what is needed first
+    const labelImg = { rgba: codec.decodeRGBA(file('shN_labels.webp')).rgba.slice() };
+    const paletteImg = codec.decodeRGBA(file('shN_centroids.webp'));
+    if (paletteImg.width !== 64 * SH_COEFFS) throw new Error(`${f.name}: unexpected SH palette width`);
+
+    const labels = new Uint16Array(n);
+    for (let u = 0; u < n; u++) labels[u] = labelImg.rgba[u * 4] | (labelImg.rgba[u * 4 + 1] << 8);
+
+    // palette entry e, coefficient j: red, green and blue as indices into the codebook
+    const palette = new Uint8Array(shN.count * SH_COEFFS * 3);
+    for (let t = 0; t < shN.count * SH_COEFFS; t++) {
+        palette[t * 3] = paletteImg.rgba[t * 4];
+        palette[t * 3 + 1] = paletteImg.rgba[t * 4 + 1];
+        palette[t * 3 + 2] = paletteImg.rgba[t * 4 + 2];
+    }
+
+    // how far the palette is from the capture, in the units of the coefficients
+    let err = 0, signal = 0;
+    for (let u = 0; u < n; u += 5) {
+        const at = labels[u] * SH_COEFFS * 3;
+        for (let j = 0; j < SH_COEFFS; j++) {
+            for (let ch = 0; ch < 3; ch++) {
+                const v = cols[rest0 + ch * SH_COEFFS + j][u];
+                const d = shN.codebook[palette[at + j * 3 + ch]] - v;
+                err += d * d;
+                signal += v * v;
+            }
+        }
+    }
+    const error = (Math.sqrt(err / signal) * 100).toFixed(1);
+    console.log(`${f.name}: SH palette of ${shN.count}, error ${error}% of the signal (rms)`);
+    const head = Buffer.from(JSON.stringify({ count: shN.count, codebook: shN.codebook, error }), 'utf8');
+    const len = Buffer.alloc(4);
+    len.writeUInt32LE(head.length, 0);
+    writeFileSync(cachePath, Buffer.concat([len, head, Buffer.from(labels.buffer, labels.byteOffset, n * 2), palette]));
+    return { labels, palette, count: shN.count, codebook: shN.codebook };
+};
+
 // ---- maths ---------------------------------------------------------------------------------
 const axisRow = (spec) => {
     const s = spec.startsWith('-') ? -1 : 1;
@@ -123,7 +301,8 @@ const quatFromMat = (m) => {
 const loadFigure = (name) => {
     const def = figures[name];
     const n = def.normalise;
-    const { count, cols } = readPly(join(root, variant ? def.raw.replace(/\.ply$/, `.${variant}.ply`) : def.raw));
+    const path = join(root, variant ? def.raw.replace(/\.ply$/, `.${variant}.ply`) : def.raw);
+    const { count, cols } = readPly(path);
 
     const yaw = n.yaw * Math.PI / 180;
     const c = Math.cos(yaw), s = Math.sin(yaw);
@@ -150,6 +329,10 @@ const loadFigure = (name) => {
     const fig = {
         name,
         def,
+        path,
+        sourceCount: count,
+        keep: keep.subarray(0, kept),       // the row of the PLY each kept gaussian came from
+        frame: [qx, qy, qz, qw],            // rotation taking the capture's axes to the figure's
         count: kept,
         pos: pos.subarray(0, kept * 3),
         rot: new Float32Array(kept * 4),        // x,y,z,w
@@ -157,6 +340,24 @@ const loadFigure = (name) => {
         rgba: new Uint8Array(kept * 4)
     };
     const u8 = v => Math.max(0, Math.min(255, Math.round(v * 255)));
+    // A base colour outside 0..1 is clipped by the 8-bit store. That is what a screen does to
+    // it anyway, until the view-dependent part is added back on top: then the clipped-off
+    // remainder matters, so it is kept for the packs that carry that part.
+    fig.excess = new Float32Array(kept * 3);
+    fig.clipped = 0;
+    for (let k = 0; k < kept; k++) {
+        const i = keep[k];
+        const dc = [cols.f_dc_0[i], cols.f_dc_1[i], cols.f_dc_2[i]];
+        let any = false;
+        for (let c = 0; c < 3; c++) {
+            const v = 0.5 + SH_C0 * dc[c];
+            if (v < 0 || v > 1) {
+                fig.excess[k * 3 + c] = v - Math.max(0, Math.min(1, v));
+                any = true;
+            }
+        }
+        if (any) fig.clipped++;
+    }
     for (let k = 0; k < kept; k++) {
         const i = keep[k];
         // PLY quaternion is w,x,y,z
@@ -260,7 +461,7 @@ console.time('total');
 const figs = figureOrder.map((name) => {
     const fig = loadFigure(name);
     assignCells(fig);
-    console.log(`${name}: ${fig.count} gaussians kept, top ${fig.topY.toFixed(3)} m`);
+    console.log(`${name}: ${fig.count} gaussians kept, top ${fig.topY.toFixed(3)} m, base colour clipped on ${(fig.clipped / fig.count * 100).toFixed(2)}%`);
     return fig;
 });
 
@@ -302,6 +503,15 @@ const meta = {
     blocks: Array.from({ length: CELLS }, (_, c) => slotStart[c + 1] - slotStart[c]),
     figures: {}
 };
+const planeCount = withSH ? PLANES + 5 : PLANES;
+if (withSH) {
+    // the clipped-off part of the base colours, as whole steps either side of nothing
+    let most = 0;
+    for (const f of figs) for (let i = 0; i < f.excess.length; i++) most = Math.max(most, Math.abs(f.excess[i]));
+    meta.planes = planeCount;
+    meta.sh = { coeffs: SH_COEFFS, excessStep: most / 127 || 1 };
+    console.log(`base colour runs up to ${most.toFixed(3)} outside 0..1: kept in steps of ${(meta.sh.excessStep * 255).toFixed(2)} of an 8-bit level`);
+}
 const slotPos = [];
 let totalBytes = 0;
 
@@ -325,7 +535,7 @@ for (const f of figs) {
     }
 
     // ---- planes, one byte per gaussian, in pairing order (see src/pack.js) --------------------
-    const planes = new Uint8Array(n * PLANES);
+    const planes = new Uint8Array(n * planeCount);
     const plane = i => planes.subarray(i * n, (i + 1) * n);
     const u8 = v => Math.max(0, Math.min(255, Math.round(v)));
 
@@ -379,6 +589,27 @@ for (const f of figs) {
         }
     }
 
+    let sh = null;
+    if (withSH) {
+        const c = await clusterSH(f);
+        const lo = plane(PLANES), hi = plane(PLANES + 1);
+        const ex = [plane(PLANES + 2), plane(PLANES + 3), plane(PLANES + 4)];
+        for (let u = 0; u < n; u++) {
+            lo[u] = c.labels[u] & 255;
+            hi[u] = c.labels[u] >> 8;
+            const g = f.order[u];
+            for (let ch = 0; ch < 3; ch++) ex[ch][u] = 128 + Math.round(f.excess[g * 3 + ch] / meta.sh.excessStep);
+        }
+        const shFile = `${f.name}.sh`;
+        const shZipped = gzipSync(c.palette, { level: 9 });
+        writeFileSync(join(outDir, shFile), shZipped);
+        totalBytes += shZipped.length;
+        // "frame" turns a direction in the capture's axes into the figure's: the coefficients
+        // are still in the capture's axes, so the app turns the view direction back with it
+        sh = { file: shFile, count: c.count, codebook: c.codebook, frame: f.frame };
+        console.log(`${f.name}: wrote ${shFile}, ${(shZipped.length / 1e6).toFixed(2)} MB`);
+    }
+
     const file = `${f.name}.pack`;
     const zipped = gzipSync(planes, { level: 9 });
     writeFileSync(join(outDir, file), zipped);
@@ -387,6 +618,7 @@ for (const f of figs) {
     totalBytes += zipped.length;
 
     const fig = { file, gaussians: n, topY: +f.topY.toFixed(4), start: Array.from(f.start), source };
+    if (sh) fig.sh = sh;
     meta.figures[f.name] = fig;
 
     // read it back the way the app will, for the partner statistics below and as a check

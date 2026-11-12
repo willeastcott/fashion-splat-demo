@@ -18,6 +18,18 @@
 // Rotation, scale, colour and opacity come back as exactly the bytes the textures hold, so
 // nothing is lost to the packing. Positions are rounded to the step (0.1 mm).
 //
+// A pack built with view-dependent colour (meta.sh is present, meta.planes is 23) adds:
+//
+//   18-19  the gaussian's entry in the outfit's palette of spherical harmonics, low byte plane
+//          then high byte plane
+//   20-22  how far the base colour (red, green, blue) runs outside the 0..1 that planes 14-16
+//          can hold, in whole steps of meta.sh.excessStep, plus 128. Nearly always 128: none
+//
+// and one <figure>.sh per outfit: a gzip stream of the palette, 15 coefficients per entry and
+// three bytes (red, green, blue) per coefficient, each an index into the 256 values of
+// meta.figures[name].sh.codebook. The coefficients are bands 1 to 3 in the capture's own axes;
+// sh.frame is the rotation (a quaternion, x y z w) from those axes to the figure's.
+//
 // The slots an outfit does not have gaussians for are not stored. meta.json says how many
 // slots each block of the body has and where each outfit's blocks start, and decodeOutfit
 // spreads the outfit's gaussians over the slots again (see slotSource).
@@ -56,12 +68,14 @@ export const largestByte = (sum, negative) => {
  * @param {Uint8Array} bytes - The unzipped .pack: PLANES planes of fig.gaussians bytes.
  * @param {object} meta - The pack's meta.json.
  * @param {object} fig - meta.figures[name].
- * @returns {{pos: Float32Array, rot: Uint8Array, scl: Uint8Array, col: Uint8Array}} Position
- * (xyz), rotation (xyzw as 0..255), scale (3 used of 4) and colour (rgba) for every slot.
+ * @returns {{pos: Float32Array, rot: Uint8Array, scl: Uint8Array, col: Uint8Array, label: Uint16Array|null, excess: Int8Array|null}}
+ * Position (xyz), rotation (xyzw as 0..255), scale (3 used of 4) and colour (rgba) for every
+ * slot. If the pack has view-dependent colour, also the slot's palette entry and the part of
+ * its base colour beyond 0..1 (rgb, in steps of meta.sh.excessStep).
  */
 export const decodeOutfit = (bytes, meta, fig) => {
     const n = fig.gaussians;
-    if (bytes.length !== n * PLANES) throw new Error('outfit pack has an unexpected size');
+    if (bytes.length !== n * (meta.planes ?? PLANES)) throw new Error('outfit pack has an unexpected size');
     const plane = i => bytes.subarray(i * n, (i + 1) * n);
 
     // ---- the outfit's own gaussians ---------------------------------------------------------
@@ -102,6 +116,10 @@ export const decodeOutfit = (bytes, meta, fig) => {
     const rot = new Uint8Array(N * 4);
     const scl = new Uint8Array(N * 4);
     const col = new Uint8Array(N * 4);
+    const llo = meta.sh ? plane(PLANES) : null, lhi = meta.sh ? plane(PLANES + 1) : null;
+    const label = meta.sh ? new Uint16Array(N) : null;
+    const ex = meta.sh ? [plane(PLANES + 2), plane(PLANES + 3), plane(PLANES + 4)] : null;
+    const excess = meta.sh ? new Int8Array(N * 3) : null;
     let s = 0;
     for (let c = 0; c < meta.blocks.length; c++) {
         const slots = meta.blocks[c];
@@ -119,8 +137,12 @@ export const decodeOutfit = (bytes, meta, fig) => {
             scl[s * 4] = s0[u]; scl[s * 4 + 1] = (s1[u] + s0[u]) & 255; scl[s * 4 + 2] = (s2[u] + s0[u]) & 255;
             col[s * 4] = (rg[u] + g[u]) & 255; col[s * 4 + 1] = g[u]; col[s * 4 + 2] = (bg[u] + g[u]) & 255;
             col[s * 4 + 3] = !borrowed && j !== prev ? al[u] : 0;
+            if (label) {
+                label[s] = llo[u] | (lhi[u] << 8);
+                excess[s * 3] = ex[0][u] - 128; excess[s * 3 + 1] = ex[1][u] - 128; excess[s * 3 + 2] = ex[2][u] - 128;
+            }
             prev = j;
         }
     }
-    return { pos, rot, scl, col };
+    return { pos, rot, scl, col, label, excess };
 };

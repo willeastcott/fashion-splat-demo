@@ -14,8 +14,9 @@ The README explains how each part works; read it first.
   baked in where the arms sit near the body, which would break. Arms take the torso's weights.
 - **Visual quality comes first.** Do not trade visible quality for size or speed without asking.
   Prefer lossless or provably invisible changes, and check new data against old values rather
-  than by eye. The phone pack (500k gaussians) was accepted because at phone size it is
-  indistinguishable from the standard one.
+  than by eye. Dropping the captures' view-dependent colour (spherical harmonics) was tried and
+  rejected by the owner: it leaves a brownish haze over black cloth. The lite and standard
+  packs carry it; keep it.
 - **Morph style.** A fast-spinning ring of white threads with a full turn of the figure was
   tried and rejected. The current morph (two waves with a band of dots between them, after the
   engine's `scripts/esm/gsplat/reveal-*.mjs` effects) was accepted. The turn is still available
@@ -48,7 +49,8 @@ The README explains how each part works; read it first.
   the callouts drift off the body.
 - The app and the tools both import `src/pack.js` and `src/figures.js`. Changing the pack format
   means bumping `PACK_VERSION` and rebuilding all three packs.
-- The packs in `public/morph-*` are committed (about 145 MB). Rebuilding them needs the original
+- The packs in `public/morph`, `public/morph-1m` and `public/morph-500k` are committed (about
+  170 MB). `public/morph-sh` is ignored. Rebuilding them needs the original
   captures in `raw/`, which are not in the repository; the README says where to get them. Avoid
   committing rebuilt packs unless they actually changed, since each commit adds their full size
   to the history.
@@ -68,14 +70,26 @@ them if the look of the demo changes noticeably.
 
 ## Known gaps
 
-- Never run on a real phone. It has run in iOS 17 Safari in the Simulator (WebGL2, phone pack),
-  which is how the WebGL2 effects problem was found. `?debug` shows renderer, pack, frame rate
-  and errors on the page for checking a device by hand.
-- WebGPU has been checked on a Mac in Chrome, Firefox 156 and Safari 26 (rest and mid-morph
-  frames match Chrome's). Phones and tablets start on WebGL2 (`PHONES_USE_WEBGPU` in
-  `src/main.js`) because WebGPU has not been tried on phone hardware. Test there with
-  `?device=webgpu&debug`; if it holds up, set the flag to true so phones get the faster path
-  and the bloom.
+- Phones: measured on one iPhone 14 Pro (Safari, 12 Nov 2026). Standard with WebGPU runs at
+  about 48 frames a second (lowest 32) at full resolution. Full with view-dependent colour
+  (`?detail=sh`) loads but runs at 21 with WebGPU and 10 with WebGL2, both after the page had
+  dropped to 1x resolution: the cost is the 4.9M slots, not pixels. Not measured: lite on a
+  phone with WebGL2 (what a phone without WebGPU gets), any older iPhone, and any Android
+  phone. `?debug` shows renderer, pack, frame rate and errors on the page for checking a device
+  by hand.
+- To try a phone locally: `npx vite build`, then
+  `npx vite preview --config vite.lan.config.js --host --port 5185` serves `dist` over https with
+  a self-signed certificate. Plain http on the network will not do for WebGPU, which browsers
+  only offer to pages loaded securely.
+- The outfit textures are released from page memory once they are on the GPU
+  (`setReleaseSourceAfterUpload` in `Morph.loadOutfit`), and the page reloads if the graphics
+  context is lost (`devicerestored` in `src/main.js`). Without this the engine keeps a second
+  copy of every texture, about 500 MB at full detail, and the iPhone killed the tab when it was
+  unlocked after sleeping.
+- WebGPU is tried first everywhere. It has been checked on a Mac in Chrome, Firefox 156 and
+  Safari 26 (rest and mid-morph frames match Chrome's), without view-dependent colour, and on
+  the iPhone with it. The view-dependent colour's WGSL has only been run in Chrome on Windows
+  and Safari on the iPhone: not yet in Firefox or in Safari on a Mac.
 - How the browsers were checked without a person at the screen: headless Firefox has no WebGPU
   adapter, so Firefox was run with a window and a temporary profile and driven over its
   Marionette port; Safari's WebDriver was off, so a temporary page loaded the app in a frame,
@@ -85,7 +99,16 @@ them if the look of the demo changes noticeably.
 - On WebGL2 the post effects (`CameraFrame`) are deliberately off: rendering splats through the
   linear-light target washes out and speckles dark cloth there. WebGPU is unaffected. If the
   engine fixes this, `Stage.capable` in `src/stage.js` is the switch.
-- View-dependent colour is dropped. It was measured at about 2.5% typical swing, so restoring it
-  was judged not worth a larger download.
+- View-dependent colour (`--sh` in `tools/build-morph.mjs`, `morphSH` in `src/morph.js`) is a
+  palette, not the captured coefficients: it is off from them by 27 to 39% rms, as SOG files
+  are. The engine re-runs the colours as the camera moves because the container claims
+  `shBands`. It ignores the rig's bone rotations, so the shading does not turn with the head.
+  `?sh=0` switches it off. The committed full pack (`public/morph`) does not have it.
+- A pack with view-dependent colour also keeps the part of each base colour outside 0..1,
+  which the 8-bit store clips (a quarter of the hoodie's gaussians are a little over 1).
+- `splat-transform`'s decimation is not bit-repeatable, so a rebuilt lite or standard pack
+  differs slightly from the committed one even with nothing else changed.
+- The media (`public/social.jpg`, `media/*`) were rendered before view-dependent colour was
+  added and have not been regenerated.
 - Joints were placed by eye from plots.
 - No licence has been chosen for the code.

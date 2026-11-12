@@ -26,21 +26,23 @@ Built with the [PlayCanvas](https://playcanvas.com) engine. The captures are by
 
 | Add to the address | Effect |
 |---|---|
-| `?detail=lite` / `standard` / `full` | 500k, 1M or about 2.9M gaussians per outfit. Phones get `lite` by default, everything else `standard`. |
+| `?detail=lite` / `standard` / `full` | 500k, 1M or about 2.9M gaussians per outfit. `standard` is the default; a phone without WebGPU gets `lite`. |
+| `?sh=0` | Leave out the view-dependent colour (see below), to see what it adds. |
+| `?detail=sh` | `full` with view-dependent colour, which `full` itself does not have. Needs the `public/morph-sh` pack, which is built locally and is not in the repository; see below. |
 | `?device=webgl2` / `webgpu` | Force a renderer. |
 | `?present` | Start in presentation mode. |
 | `?attract=0` | Do not run by itself; stay still until touched. |
 | `?debug` | Show the renderer, pack, frame rate and any errors on the page. Useful on a phone. |
 | `?effects=0` | Start with bloom and the vignette off. |
 
-On a desktop it uses WebGPU where the browser has it, and WebGL2 otherwise. Phones and tablets
-start on WebGL2, because WebGPU has not been tried on phone hardware yet; add `?device=webgpu`
-to try it. On WebGL2 the bloom is left out, because the engine's post-effect path washes out
-dark splats there; everything else is the same.
+It uses WebGPU where the browser has it, and WebGL2 otherwise. On WebGL2 the bloom is left out,
+because the engine's post-effect path washes out dark splats there; everything else is the
+same.
 
 Checked so far, on a Mac: WebGPU in Chrome, Firefox 156 and Safari 26; WebGL2 in Chrome and
 Firefox; and Safari on iOS 17 in the Simulator (WebGL2, including touch and both
-orientations). Not yet run on a physical phone.
+orientations). On a phone: Safari on an iPhone 14 Pro, WebGPU and WebGL2, where the standard
+detail runs at about 48 frames a second on WebGPU. No Android phone has been tried.
 
 ## Clips
 
@@ -77,10 +79,19 @@ skinning as the gaussians, on the CPU, so it stays on its spot as the body moves
 it travels to its counterpart on the next outfit and changes its text as the wave passes. See
 [`src/callouts.js`](src/callouts.js).
 
-**A small download.** Each outfit is packed to about 11 bytes per gaussian: 33 MB for all three
-at the standard detail, 16 MB on phones. Rotation, scale, colour and opacity come back
-bit-identical to what the GPU textures hold; positions are rounded to 0.1 mm. The first outfit
-is shown as soon as it arrives. See [`src/pack.js`](src/pack.js).
+**Colour that changes with the view.** A captured gaussian has a base colour and 45 spherical
+harmonic coefficients that shift it with the direction it is seen from: the sheen on a
+waterproof, the depth of black cotton. Storing them outright would be several times the rest
+of the data, so they are clustered into a palette of 65,536 entries per outfit (by
+[splat-transform](https://github.com/playcanvas/splat-transform), as for the SOG files
+SuperSplat publishes) and each gaussian keeps an index into it. The palette is evaluated in the
+same shader as the morph, and the colours are worked out again each time the camera has moved
+two degrees round the figure. See `morphSH` in [`src/morph.js`](src/morph.js).
+
+**A small download.** Each outfit is packed to about 13 bytes per gaussian, plus 2.8 MB for its
+palette: 47 MB for all three at the standard detail, 28 MB at the lite one. Rotation, scale,
+colour and opacity come back bit-identical to what the GPU textures hold; positions are rounded
+to 0.1 mm. The first outfit is shown as soon as it arrives. See [`src/pack.js`](src/pack.js).
 
 The studio floor, contact shadows, bloom and the light the morph throws on the floor are in
 [`src/stage.js`](src/stage.js). The shadows are soft shapes drawn at the rig's ankles, not cast
@@ -112,6 +123,15 @@ or the pack format.
    `raw/Outdoor_01/scene.ply`.
 3. Run `npm run data`. It decimates each capture, pairs the gaussians and writes the three packs.
 
+The decimation is not exactly repeatable, so rebuilt lite and standard packs hold slightly
+different gaussians each time. The clustering of the view-dependent colour runs on the GPU,
+takes a few minutes and is cached beside each capture.
+
+`node --max-old-space-size=12000 tools/build-morph.mjs --sh` writes `public/morph-sh`: every
+captured gaussian with its view-dependent colour, for `?detail=sh`. It is 125 MB and is not in
+the repository. A phone can load it but not run it smoothly (21 frames a second on an iPhone 14
+Pro with WebGPU, 10 with WebGL2).
+
 `node tools/anchor.mjs <figure> front <x> <y>` prints a point on an outfit's surface, for
 placing a new callout in `src/figures.js`.
 
@@ -121,8 +141,8 @@ placing a new callout in `src/figures.js`.
   [Christoph Schindelar](https://superspl.at/user/schindelar3d), licensed under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The data in `public/morph-*` is
   adapted from them: cropped to the figure, scaled and turned into a common frame, decimated for
-  the lighter packs, re-ordered, and stored without view-dependent colour. It carries the same
-  licence and the same credit.
+  the lighter packs, re-ordered, and stored with view-dependent colour reduced to a palette (the
+  full pack, without it). It carries the same licence and the same credit.
 - **Engine:** [PlayCanvas](https://github.com/playcanvas/engine), MIT.
 - **Product names and prices** are invented for the demo. They do not describe the real garments.
 - **Code:** no licence has been chosen for the code in this repository yet.

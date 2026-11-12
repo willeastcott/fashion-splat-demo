@@ -2,8 +2,10 @@ import {
     BoundingBox,
     GSplatContainer,
     GSplatFormat,
+    PIXELFORMAT_RGBA16F,
     PIXELFORMAT_RGBA32F,
     PIXELFORMAT_RGBA8,
+    Texture,
     Vec3,
     WORKBUFFER_UPDATE_ALWAYS,
     WORKBUFFER_UPDATE_ONCE
@@ -53,6 +55,43 @@ ${select('Rot', 'vec4', true)}
 ${select('Scl', 'vec4', true)}
 ${select('Col', 'vec4', true)}
 
+#ifdef MORPH_SH
+uniform vec4 uShCam;        // camera position in the figure's frame; strength of the view-dependent colour
+uniform vec4 uShFrame[3];   // per outfit: rotation from the capture's axes to the figure's (x,y,z,w)
+
+// The part of a gaussian's colour that changes with the direction it is seen from: bands 1 to
+// 3 of the capture's spherical harmonics, read from outfit i's rows of the palette. "at" is
+// the gaussian's position and, in w, its palette entry. The sum is the engine's evalSH.
+vec3 morphSH(int i, vec4 at) {
+    vec3 v = normalize(at.xyz - uShCam.xyz);
+    // the coefficients are in the capture's axes: turn the direction back into them
+    vec4 q = vec4(-uShFrame[i].xyz, uShFrame[i].w);
+    vec3 d = v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+
+    int n = int(at.w + 0.5);
+    ivec2 uv = ivec2((n % 64) * 15, n / 64 + i * 1024);
+    vec3 sh[15];
+    for (int k = 0; k < 15; k++) sh[k] = texelFetch(shPal, uv + ivec2(k, 0), 0).rgb;
+
+    float x = d.x, y = d.y, z = d.z;
+    float xx = x * x, yy = y * y, zz = z * z, xy = x * y, yz = y * z, xz = x * z;
+    vec3 c = 0.4886025119029199 * (-sh[0] * y + sh[1] * z - sh[2] * x) +
+        sh[3] * (1.0925484305920792 * xy) +
+        sh[4] * (-1.0925484305920792 * yz) +
+        sh[5] * (0.31539156525252005 * (2.0 * zz - xx - yy)) +
+        sh[6] * (-1.0925484305920792 * xz) +
+        sh[7] * (0.5462742152960396 * (xx - yy)) +
+        sh[8] * (-0.5900435899266435 * y * (3.0 * xx - yy)) +
+        sh[9] * (2.890611442640554 * xy * z) +
+        sh[10] * (-0.4570457994644658 * y * (4.0 * zz - xx - yy)) +
+        sh[11] * (0.3731763325901154 * z * (2.0 * zz - 3.0 * xx - 3.0 * yy)) +
+        sh[12] * (-0.4570457994644658 * x * (4.0 * zz - xx - yy)) +
+        sh[13] * (1.445305721320277 * z * (xx - yy)) +
+        sh[14] * (-0.5900435899266435 * x * (xx - 3.0 * yy));
+    return c * uShCam.w;
+}
+#endif
+
 bool gMorphReady = false;
 vec3 gMorphCenter;
 vec4 gMorphRot;             // x,y,z,w
@@ -73,7 +112,8 @@ void morphEval() {
     gMorphReady = true;
 
     int ia = int(uMorph.x + 0.5);
-    vec3 a = morphPos(ia).xyz;
+    vec4 a4 = morphPos(ia);
+    vec3 a = a4.xyz;
     float raw = 0.0;
     float h = 0.0;
     if (uMorph.z > 0.0) {
@@ -87,21 +127,30 @@ void morphEval() {
     // not reached yet: exactly the old outfit. Left behind: exactly the new one.
     if (raw <= 0.0 || raw >= 1.0) {
         int i = raw >= 1.0 ? int(uMorph.y + 0.5) : ia;
-        gMorphCenter = morphPos(i).xyz;
+        vec4 p4 = morphPos(i);
+        gMorphCenter = p4.xyz;
         gMorphRot = normalize(morphRot(i) * 2.0 - 1.0);
         gMorphScale = exp(mix(vec3(uMorphScale.x), vec3(uMorphScale.y), morphScl(i).xyz));
         gMorphColor = morphCol(i);
+#ifdef MORPH_SH
+        gMorphColor.rgb = max(gMorphColor.rgb + morphSH(i, p4), vec3(0.0));
+#endif
         return;
     }
 
     int ib = int(uMorph.y + 0.5);
-    vec3 b = morphPos(ib).xyz;
+    vec4 b4 = morphPos(ib);
+    vec3 b = b4.xyz;
     vec4 qa = morphRot(ia) * 2.0 - 1.0;
     vec4 qb = morphRot(ib) * 2.0 - 1.0;
     vec3 la = mix(vec3(uMorphScale.x), vec3(uMorphScale.y), morphScl(ia).xyz);
     vec3 lb = mix(vec3(uMorphScale.x), vec3(uMorphScale.y), morphScl(ib).xyz);
     vec4 ca = morphCol(ia);
     vec4 cb = morphCol(ib);
+#ifdef MORPH_SH
+    ca.rgb = max(ca.rgb + morphSH(ia, a4), vec3(0.0));
+    cb.rgb = max(cb.rgb + morphSH(ib, b4), vec3(0.0));
+#endif
     float h2 = fract(h * 57.31 + 0.137);
 
     // the stages on the clock
@@ -175,6 +224,49 @@ ${select('Rot', 'vec4f', false)}
 ${select('Scl', 'vec4f', false)}
 ${select('Col', 'vec4f', false)}
 
+#ifdef MORPH_SH
+uniform uShCam: vec4f;
+uniform uShFrame: array<vec4f, 3>;
+
+fn morphSH(i: i32, at: vec4f) -> vec3f {
+    let v = normalize(at.xyz - uniform.uShCam.xyz);
+    let f = uniform.uShFrame[i];
+    let q = vec4f(-f.xyz, f.w);
+    let d = v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+
+    let n = i32(at.w + 0.5);
+    let uv = vec2i((n % 64) * 15, n / 64 + i * 1024);
+    var sh: array<vec3f, 15>;
+    for (var k = 0; k < 15; k++) {
+        sh[k] = textureLoad(shPal, uv + vec2i(k, 0), 0).rgb;
+    }
+
+    let x = d.x;
+    let y = d.y;
+    let z = d.z;
+    let xx = x * x;
+    let yy = y * y;
+    let zz = z * z;
+    let xy = x * y;
+    let yz = y * z;
+    let xz = x * z;
+    let c = 0.4886025119029199 * (-sh[0] * y + sh[1] * z - sh[2] * x) +
+        sh[3] * (1.0925484305920792 * xy) +
+        sh[4] * (-1.0925484305920792 * yz) +
+        sh[5] * (0.31539156525252005 * (2.0 * zz - xx - yy)) +
+        sh[6] * (-1.0925484305920792 * xz) +
+        sh[7] * (0.5462742152960396 * (xx - yy)) +
+        sh[8] * (-0.5900435899266435 * y * (3.0 * xx - yy)) +
+        sh[9] * (2.890611442640554 * xy * z) +
+        sh[10] * (-0.4570457994644658 * y * (4.0 * zz - xx - yy)) +
+        sh[11] * (0.3731763325901154 * z * (2.0 * zz - 3.0 * xx - 3.0 * yy)) +
+        sh[12] * (-0.4570457994644658 * x * (4.0 * zz - xx - yy)) +
+        sh[13] * (1.445305721320277 * z * (xx - yy)) +
+        sh[14] * (-0.5900435899266435 * x * (xx - 3.0 * yy));
+    return c * uniform.uShCam.w;
+}
+#endif
+
 var<private> gMorphReady: bool = false;
 var<private> gMorphCenter: vec3f;
 var<private> gMorphRot: vec4f;
@@ -198,7 +290,8 @@ fn morphEval() {
     let hi = vec3f(uniform.uMorphScale.y);
     let ia = i32(uniform.uMorph.x + 0.5);
     let ib = i32(uniform.uMorph.y + 0.5);
-    let a = morphPos(ia).xyz;
+    let a4 = morphPos(ia);
+    let a = a4.xyz;
     var raw = 0.0;
     var h = 0.0;
     if (uniform.uMorph.z > 0.0) {
@@ -211,20 +304,29 @@ fn morphEval() {
     if (raw <= 0.0 || raw >= 1.0) {
         var i = ia;
         if (raw >= 1.0) { i = ib; }
-        gMorphCenter = morphPos(i).xyz;
+        let p4 = morphPos(i);
+        gMorphCenter = p4.xyz;
         gMorphRot = normalize(morphRot(i) * 2.0 - 1.0);
         gMorphScale = exp(mix(lo, hi, morphScl(i).xyz));
         gMorphColor = morphCol(i);
+#ifdef MORPH_SH
+        gMorphColor = vec4f(max(gMorphColor.rgb + morphSH(i, p4), vec3f(0.0)), gMorphColor.a);
+#endif
         return;
     }
 
-    let b = morphPos(ib).xyz;
+    let b4 = morphPos(ib);
+    let b = b4.xyz;
     let qa = morphRot(ia) * 2.0 - 1.0;
     var qb = morphRot(ib) * 2.0 - 1.0;
     let la = mix(lo, hi, morphScl(ia).xyz);
     let lb = mix(lo, hi, morphScl(ib).xyz);
-    let ca = morphCol(ia);
-    let cb = morphCol(ib);
+    var ca = morphCol(ia);
+    var cb = morphCol(ib);
+#ifdef MORPH_SH
+    ca = vec4f(max(ca.rgb + morphSH(ia, a4), vec3f(0.0)), ca.a);
+    cb = vec4f(max(cb.rgb + morphSH(ib, b4), vec3f(0.0)), cb.a);
+#endif
     let h2 = fract(h * 57.31 + 0.137);
 
     let glide = smoothstep(0.08, 0.80, raw);
@@ -280,6 +382,34 @@ fn getColor() -> vec4f {
 }
 `;
 
+// keep or drop the "#ifdef MORPH_SH ... #endif" parts of the read code (they do not nest)
+const resolveSH = (code, on) => code.replace(/^#ifdef MORPH_SH\r?\n([\s\S]*?)^#endif\r?\n/gm, on ? '$1' : '');
+
+// The palette of spherical harmonics: one texture for all outfits, PALETTE_ROWS rows each, 64
+// entries to a row and 15 texels (coefficients) to an entry
+const SH_COEFFS = 15;
+const PALETTE_WIDTH = 64 * SH_COEFFS;
+const PALETTE_ROWS = 1024;
+
+const halfScratch = new Float32Array(1);
+const halfBits = new Uint32Array(halfScratch.buffer);
+// a float as the 16 bits of a half float (finite values in the half range; rounds to nearest)
+const toHalf = (value) => {
+    halfScratch[0] = value;
+    const x = halfBits[0];
+    const sign = (x >>> 16) & 0x8000;
+    const exp = ((x >>> 23) & 0xff) - 112;
+    let mant = x & 0x7fffff;
+    if (exp <= 0) {
+        if (exp < -10) return sign;
+        mant |= 0x800000;
+        const shift = 14 - exp;
+        return sign | ((mant + (1 << (shift - 1))) >>> shift);
+    }
+    if (exp >= 31) return sign | 0x7bff;
+    return (sign | (exp << 10) | (mant >>> 13)) + ((mant >>> 12) & 1);
+};
+
 const smooth = t => t * t * (3 - 2 * t);
 
 // height the wave of a morph is measured against, metres (a little above the tallest figure)
@@ -330,6 +460,8 @@ export class Morph {
     /** Strength of the second wave's glow. */
     heat = 0.55;
 
+    _viewColour = 1;
+
     /**
      * Fetch the pack's description and its first outfit, and build the container. The other
      * outfits are fetched afterwards with loadOutfit, so the first can be on screen sooner.
@@ -353,19 +485,37 @@ export class Morph {
         }
         const N = meta.count;
 
+        // A pack with view-dependent colour brings a palette of spherical harmonics, and each
+        // gaussian's entry in it rides in the spare fourth component of its position. Its base
+        // colours are held as half floats, because they are not clipped to 0..1 (see pack.js).
+        const sh = !!meta.sh;
         const streams = [];
         for (let i = 0; i < OUTFITS; i++) {
             streams.push(
                 { name: `pos${i}`, format: PIXELFORMAT_RGBA32F },
                 { name: `rot${i}`, format: PIXELFORMAT_RGBA8 },
                 { name: `scl${i}`, format: PIXELFORMAT_RGBA8 },
-                { name: `col${i}`, format: PIXELFORMAT_RGBA8 }
+                { name: `col${i}`, format: sh ? PIXELFORMAT_RGBA16F : PIXELFORMAT_RGBA8 }
             );
         }
-        const format = new GSplatFormat(device, streams, { readGLSL, readWGSL });
+        if (sh) streams.push({ name: 'shPal', format: PIXELFORMAT_RGBA16F });
+        const format = new GSplatFormat(device, streams, {
+            readGLSL: resolveSH(readGLSL, sh),
+            readWGSL: resolveSH(readWGSL, sh)
+        });
         const container = new GSplatContainer(device, N, format);
 
         const morph = new Morph();
+        morph.sh = sh;
+        if (sh) {
+            // the container sizes every stream for one texel per gaussian; the palette has its
+            // own size, so swap in a texture of that size before anything is uploaded
+            container.streams.textures.get('shPal').destroy();
+            morph.palette = Texture.createDataTexture2D(device, 'shPal', PALETTE_WIDTH, PALETTE_ROWS * OUTFITS, PIXELFORMAT_RGBA16F);
+            container.streams.textures.set('shPal', morph.palette);
+            // tells the engine to work the colours out again as the camera moves round
+            container.gsplatData.shBands = 3;
+        }
         morph.device = device;
         morph.baseUrl = baseUrl;
         morph.names = names;
@@ -392,6 +542,13 @@ export class Morph {
     async loadOutfit(i, onProgress) {
         if (this.ready[i]) return;
         const fig = this.meta.figures[this.names[i]];
+        const gunzip = async r => new Uint8Array(await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+        // the palette is small next to the pack: fetch it alongside
+        const paletteBytes = this.sh ? fetch(`${this.baseUrl}/${fig.sh.file}`).then((r) => {
+            if (!r.ok) throw new Error(`could not fetch ${fig.sh.file}`);
+            return gunzip(r);
+        }) : null;
+        paletteBytes?.catch(() => {});
         const res = await fetch(`${this.baseUrl}/${fig.file}`);
         if (!res.ok) throw new Error(`could not fetch ${fig.file}`);
 
@@ -406,7 +563,23 @@ export class Morph {
             }
         }));
         const bytes = new Uint8Array(await new Response(counted.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
-        const { pos, rot, scl, col } = decodeOutfit(bytes, this.meta, fig);
+        const { pos, rot, scl, col, label, excess } = decodeOutfit(bytes, this.meta, fig);
+
+        if (this.sh) {
+            // this outfit's rows of the palette, as the values the codebook stands for
+            const entries = await paletteBytes;
+            if (entries.length !== fig.sh.count * SH_COEFFS * 3) throw new Error('outfit palette has an unexpected size');
+            const half = Uint16Array.from(fig.sh.codebook, toHalf);
+            const texels = this.palette.lock();
+            const row0 = i * PALETTE_ROWS * PALETTE_WIDTH;
+            for (let t = 0; t < fig.sh.count * SH_COEFFS; t++) {
+                const d = (row0 + t) * 4;
+                texels[d] = half[entries[t * 3]];
+                texels[d + 1] = half[entries[t * 3 + 1]];
+                texels[d + 2] = half[entries[t * 3 + 2]];
+            }
+            this.palette.unlock();
+        }
 
         const N = this.count;
         const posTex = this.container.getTexture(`pos${i}`);
@@ -415,17 +588,40 @@ export class Morph {
             dst[k * 4] = pos[k * 3];
             dst[k * 4 + 1] = pos[k * 3 + 1];
             dst[k * 4 + 2] = pos[k * 3 + 2];
+            if (label) dst[k * 4 + 3] = label[k];
         }
         posTex.unlock();
+        // The engine keeps the array a texture was filled from, so it can fill it again if the
+        // graphics context is lost. For these that is a second copy of everything, hundreds of
+        // megabytes at full detail and too much for a phone: let them go once they are on the
+        // GPU. main.js reloads the page if the context is ever lost.
+        posTex.setReleaseSourceAfterUpload();
         for (const [name, data] of [['rot', rot], ['scl', scl], ['col', col]]) {
             const tex = this.container.getTexture(`${name}${i}`);
-            tex.lock().set(data);
+            if (name === 'col' && excess) {
+                // half floats: the 8-bit colour, plus whatever of it was beyond 0..1
+                const byteHalf = Uint16Array.from({ length: 256 }, (_, b) => toHalf(b / 255));
+                const step = this.meta.sh.excessStep;
+                const texels = tex.lock();
+                for (let k = 0; k < N; k++) {
+                    for (let c = 0; c < 3; c++) {
+                        const e = excess[k * 3 + c];
+                        texels[k * 4 + c] = e ? toHalf(data[k * 4 + c] / 255 + e * step) : byteHalf[data[k * 4 + c]];
+                    }
+                    texels[k * 4 + 3] = byteHalf[data[k * 4 + 3]];
+                }
+            } else {
+                tex.lock().set(data);
+            }
             tex.unlock();
+            tex.setReleaseSourceAfterUpload();
         }
 
         // WebGL2 sorts on the CPU and needs the positions; WebGPU sorts on the GPU
         if (!this.device.isWebGPU) this.centers[i] = pos;
         this.ready[i] = true;
+        // the palette is filled an outfit at a time, so its copy is kept until the last one
+        if (this.sh && this.ready.every(Boolean)) this.palette.setReleaseSourceAfterUpload();
         if (onProgress) onProgress(1);
     }
 
@@ -443,6 +639,33 @@ export class Morph {
         this.gsplat = gsplat;
         this._push();
         gsplat.workBufferUpdate = WORKBUFFER_UPDATE_ONCE;
+    }
+
+    /**
+     * Tell the shader where the camera is, for the colour that depends on the view. The engine
+     * decides when to work the colours out again (see colorUpdateAngle in main.js); this only
+     * has to be current when it does.
+     *
+     * @param {Vec3} cameraPos - Camera position in the figure's own frame.
+     */
+    setView(cameraPos) {
+        if (!this.sh) return;
+        this.gsplat.setParameter('uShCam', [cameraPos.x, cameraPos.y, cameraPos.z, this.viewColour]);
+    }
+
+    /** Strength of the view-dependent colour: 1 as captured, 0 for the base colour alone. */
+    get viewColour() {
+        return this._viewColour;
+    }
+
+    set viewColour(value) {
+        if (value === this._viewColour) return;
+        this._viewColour = value;
+        if (this.sh && this.gsplat) {
+            const cam = this.gsplat.getParameter('uShCam') ?? [0, 1, 5, 1];
+            this.gsplat.setParameter('uShCam', [cam[0], cam[1], cam[2], value]);
+            this.gsplat.workBufferUpdate = WORKBUFFER_UPDATE_ONCE;
+        }
     }
 
     get busy() {
@@ -530,5 +753,9 @@ export class Morph {
         g.setParameter('uMorphDot', [this.dotTint[0], this.dotTint[1], this.dotTint[2], this.dotGlow]);
         g.setParameter('uMorphGlow', [this.glow[0], this.glow[1], this.glow[2], this.heat]);
         g.setParameter('uMorphScale', [this.meta.scaleRange[0], this.meta.scaleRange[1], 0, 0]);
+        if (this.sh) {
+            if (!g.getParameter('uShCam')) g.setParameter('uShCam', [0, 1, 5, this.viewColour]);
+            g.setParameter('uShFrame[0]', new Float32Array(this.names.flatMap(name => this.meta.figures[name].sh.frame)));
+        }
     }
 }

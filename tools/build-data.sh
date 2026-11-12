@@ -7,8 +7,9 @@
 # The decimation uses @playcanvas/splat-transform, fetched on demand by npx.
 #   1. Decimate each capture to 1M and to 500k gaussians (skipped if already done).
 #   2. Pair gaussians across the three outfits and write the morph packs (gzipped, about
-#      11 bytes per gaussian; see src/pack.js):
-#        public/morph-500k  for phones (?detail=lite)
+#      11 bytes per gaussian, or 13 with view-dependent colour; see src/pack.js). The lighter
+#      two keep that colour (--sh), which needs a GPU for its clustering:
+#        public/morph-500k  for phones without WebGPU (?detail=lite)
 #        public/morph-1m    the default, light enough for 60 fps on a laptop
 #        public/morph       every captured gaussian (?detail=full)
 set -e
@@ -23,6 +24,6 @@ for n in Casual_01 Casual_02 Outdoor_01; do
     fi
 done
 
-node --max-old-space-size=8192 tools/build-morph.mjs --variant=500k
-node --max-old-space-size=8192 tools/build-morph.mjs --variant=1m
+node --max-old-space-size=8192 tools/build-morph.mjs --variant=500k --sh
+node --max-old-space-size=8192 tools/build-morph.mjs --variant=1m --sh
 node --max-old-space-size=8192 tools/build-morph.mjs

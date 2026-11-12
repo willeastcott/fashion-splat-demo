@@ -59,14 +59,11 @@ const fail = (message, err) => {
     throw err;
 };
 
-// WebGPU sorts on the GPU, is close to twice as fast, and is the only path with bloom. It has
-// been run through all three WebGPU implementations on a desktop: Chrome's, Firefox's and
-// Safari's. It has not been run on a phone, where memory and GPU limits are tighter, so phones
-// and tablets start on WebGL2, which has been checked in iOS Safari. Once WebGPU has been seen
-// working on real phones (try it there with ?device=webgpu&debug), set this to true.
-const PHONES_USE_WEBGPU = false;
-const handheld = matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
-const deviceTypes = params.get('device') ? [params.get('device')] : (handheld && !PHONES_USE_WEBGPU ? ['webgl2'] : ['webgpu', 'webgl2']);
+// WebGPU sorts on the GPU, is about twice as fast, and is the only path with bloom. It has been
+// run through all three WebGPU implementations on a desktop (Chrome's, Firefox's and Safari's)
+// and through Safari's on an iPhone 14 Pro, so it is tried first everywhere, with WebGL2 behind
+// it. No Android phone has been tried.
+const deviceTypes = params.get('device') ? [params.get('device')] : ['webgpu', 'webgl2'];
 
 let device;
 try {
@@ -79,6 +76,11 @@ try {
     fail('This browser cannot show 3D graphics. Try a recent version of Chrome, Edge or Safari.', err);
 }
 device.maxPixelRatio = Math.min(window.devicePixelRatio, 2);
+
+// The outfits are not kept in memory once they are on the GPU (see Morph.loadOutfit), so a lost
+// graphics context cannot be refilled: start again instead. Phones drop the context of a page
+// that has been in the background.
+device.on('devicerestored', () => location.reload());
 
 const createOptions = new AppOptions();
 createOptions.graphicsDevice = device;
@@ -101,15 +103,17 @@ window.addEventListener('resize', () => app.resizeCanvas());
 
 // ---- outfits -------------------------------------------------------------------------------
 const defs = figureOrder.map(name => figures[name]);
-// The same three outfits come in three packs: "lite" (500k gaussians each) for phones,
-// "standard" (1M each) and "full" (every captured gaussian, about 2.9M each). A phone gets
-// lite unless ?detail= says otherwise: on a small screen it still has more gaussians per pixel
-// than standard has on a desktop, at half the download and memory.
-const TIERS = { lite: 'morph-500k', standard: 'morph-1m', full: 'morph' };
+// The same three outfits come in several packs: "lite" (500k gaussians each), "standard" (1M
+// each) and "full" (every captured gaussian, about 2.9M each). Lite and standard keep the
+// captures' view-dependent colour (spherical harmonics); full does not, and "sh" is full with
+// it, built locally (see the README).
+// Standard is the default. An iPhone 14 Pro runs it at about 48 frames a second on WebGPU,
+// but WebGL2 was half as fast there, so a phone without WebGPU gets lite.
+const TIERS = { lite: 'morph-500k', standard: 'morph-1m', full: 'morph', sh: 'morph-sh' };
 const phone = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
-const wanted = params.get('detail') in TIERS ? params.get('detail') : (phone ? 'lite' : 'standard');
+const wanted = params.get('detail') in TIERS ? params.get('detail') : (phone && !device.isWebGPU ? 'lite' : 'standard');
 // if the wanted pack has not been built, use the nearest one that has
-const fallbacks = { lite: ['lite', 'standard', 'full'], standard: ['standard', 'lite', 'full'], full: ['full', 'standard', 'lite'] };
+const fallbacks = { lite: ['lite', 'standard', 'full'], standard: ['standard', 'lite', 'full'], full: ['full', 'standard', 'lite'], sh: ['sh', 'full', 'standard', 'lite'] };
 // relative to wherever the app is hosted, so it also works from a sub-folder of a site
 const base = import.meta.env.BASE_URL;
 
@@ -139,6 +143,12 @@ const figure = new Entity('figure');
 figure.addComponent('gsplat', { resource: morph.container });
 app.root.addChild(figure);
 morph.attach(figure.gsplat);
+// with view-dependent colour, the colours are worked out again each time the camera has moved
+// this many degrees round the figure; ?sh=0 shows the same pack with the base colour alone
+if (morph.sh) {
+    app.scene.gsplat.colorUpdateAngle = 2;
+    if (params.get('sh') === '0') morph.viewColour = 0;
+}
 
 // ---- camera --------------------------------------------------------------------------------
 // A tall, narrow window (a phone held upright) stands the camera further back and aims it
@@ -329,8 +339,8 @@ app.on('update', (dt) => {
             meter.frames = 0;
             meter.since = now;
             debug.textContent = [
-                `renderer  ${device.deviceType}${device.isWebGPU ? '' : navigator.gpu ? (deviceTypes.includes('webgpu') ? ' (WebGPU failed to start)' : ' (WebGPU is not the default on phones yet: add ?device=webgpu)') : ' (no WebGPU here)'}`,
-                `pack      ${loadedTier}, ${morph.count.toLocaleString()} slots`,
+                `renderer  ${device.deviceType}${device.isWebGPU ? '' : navigator.gpu ? (deviceTypes.includes('webgpu') ? ' (WebGPU failed to start)' : '') : ' (no WebGPU here)'}`,
+                `pack      ${loadedTier}, ${morph.count.toLocaleString()} slots${morph.sh ? `, view-dependent colour ${morph.viewColour ? 'on' : 'off'}` : ''}`,
                 `outfits   ${morph.ready.filter(Boolean).length} of ${morph.ready.length} loaded`,
                 `canvas    ${canvas.width}x${canvas.height} at ${device.maxPixelRatio.toFixed(2)}x`,
                 `effects   ${stage.effects ? 'bloom and vignette on' : stage.capable ? 'off' : 'off on WebGL2, to keep colours true'}`,
@@ -376,6 +386,7 @@ app.on('update', (dt) => {
 
     rig.rigInv.copy(figure.getWorldTransform()).invert();
     rig.rigInv.transformPoint(camera.getPosition(), cameraPos);
+    morph.setView(cameraPos);
     rig.update(dt, {
         idle: ui.idle.checked,
         intensity: Number(ui.intensity.value),
