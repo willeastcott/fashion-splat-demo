@@ -25,6 +25,10 @@
         button, summary, label { touch-action: manipulation; }
         canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
+        /* stands in for the rendered vignette on WebGL2, where the post effects are off */
+        #vignette { display: none; position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse 75% 75% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.42) 130%); }
+        body.plain #vignette { display: block; }
+
         /* callouts: lines in an svg, labels as elements, both placed from script every frame */
         #overlay { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
         #overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -90,6 +94,9 @@
         body.presenting #panel { display: none; }
         body.presenting, body.presenting .callout { cursor: none; }
 
+        /* ?debug */
+        #debug { position: fixed; left: 8px; top: calc(96px + env(safe-area-inset-top, 0px)); margin: 0; padding: 6px 8px; border-radius: 6px; background: rgba(0, 0, 0, 0.72); font: 10px/1.45 ui-monospace, Menlo, monospace; color: #cfe8cf; white-space: pre-wrap; max-width: 78vw; pointer-events: none; z-index: 5; }
+
         body.loading #look, body.loading #buy, body.loading #panel, body.loading #outfits, body.loading #credit { visibility: hidden; }
 
         /* phones: sizes and the bag button share a row above the outfit buttons, the bag count
@@ -114,6 +121,7 @@
 </head>
 <body class="loading">
     <canvas id="app"></canvas>
+    <div id="vignette"></div>
     <div id="overlay"></div>
     <div id="status">
         <div class="title">The Future of Clothes Shopping</div>
@@ -139,7 +147,7 @@
         <div class="controls">
             <label><input type="checkbox" id="attract" checked> Run by itself when idle</label>
             <label><input type="checkbox" id="present"> Presentation mode (P)</label>
-            <label><input type="checkbox" id="effects" checked> Bloom and vignette</label>
+            <label><input type="checkbox" id="effects" checked> Bloom and vignette (WebGPU)</label>
             <label><input type="checkbox" id="cycle"> Cycle outfits</label>
             <label><input type="checkbox" id="spin"> Turn on change</label>
             <label><input type="checkbox" id="labels" checked> Callouts</label>

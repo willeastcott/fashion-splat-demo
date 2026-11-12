@@ -36,8 +36,24 @@ const status = document.getElementById('status');
 const statusNote = status.querySelector('.note');
 const statusBar = /** @type {HTMLElement} */ (status.querySelector('.bar i'));
 
+// ?debug shows what the page is running on, how fast, and anything that has gone wrong: for
+// checking a phone or any device a console cannot be attached to
+const debug = params.has('debug') ? document.createElement('pre') : null;
+const problems = [];
+if (debug) {
+    debug.id = 'debug';
+    document.body.appendChild(debug);
+    debug.textContent = 'starting…';
+    const note = (text) => {
+        if (problems.length < 4) problems.push(String(text).slice(0, 160));
+    };
+    window.addEventListener('error', e => note(e.message));
+    window.addEventListener('unhandledrejection', e => note(e.reason?.message ?? e.reason));
+}
+
 // something a visitor can act on, rather than a blank page
 const fail = (message, err) => {
+    if (debug) debug.textContent = `failed: ${err?.message ?? err}`;
     status.classList.add('failed');
     statusNote.textContent = message;
     throw err;
@@ -91,11 +107,13 @@ const base = import.meta.env.BASE_URL;
 
 // only the first outfit is fetched before the app starts; the others follow in the background
 let morph;
+let loadedTier = '';
 for (const tier of fallbacks[wanted]) {
     try {
         morph = await Morph.load(device, `${base}${TIERS[tier]}`, figureOrder, (p) => {
             statusBar.style.width = `${Math.round(p * 100)}%`;
         });
+        loadedTier = tier;
         break;
     } catch (err) {
         console.warn(err.message);
@@ -142,6 +160,8 @@ const controls = camera.script.create(CameraControls, {
 
 // ---- studio: floor, shadows, bloom ----------------------------------------------------------
 const stage = new Stage(app, camera);
+// where the effects cannot run, the page's own vignette stands in for theirs
+document.body.classList.toggle('plain', !stage.capable);
 
 // ---- rig -----------------------------------------------------------------------------------
 const rig = new Rig(defs[0]);
@@ -167,6 +187,8 @@ const ui = {
 };
 // ?attract=0 keeps the demo still until it is touched, for embedding or for a fixed view
 if (params.get('attract') === '0') ui.attract.checked = false;
+// ?effects=0 starts with bloom and the vignette off
+if (params.get('effects') === '0') ui.effects.checked = false;
 ui.intensity.addEventListener('input', () => {
     ui.intensityValue.textContent = Number(ui.intensity.value).toFixed(1);
 });
@@ -288,7 +310,28 @@ if (params.has('present')) setPresenting(true);
 const cameraPos = new Vec3();
 let restTime = 0;
 let slow = 0;
+const meter = { frames: 0, since: performance.now(), fps: 0, worst: Infinity };
 app.on('update', (dt) => {
+    if (debug) {
+        meter.frames++;
+        const now = performance.now();
+        if (now - meter.since >= 1000) {
+            meter.fps = Math.round(meter.frames * 1000 / (now - meter.since));
+            meter.worst = Math.min(meter.worst, meter.fps);
+            meter.frames = 0;
+            meter.since = now;
+            debug.textContent = [
+                `renderer  ${device.deviceType}${navigator.gpu ? '' : ' (no WebGPU here)'}`,
+                `pack      ${loadedTier}, ${morph.count.toLocaleString()} slots`,
+                `outfits   ${morph.ready.filter(Boolean).length} of ${morph.ready.length} loaded`,
+                `canvas    ${canvas.width}x${canvas.height} at ${device.maxPixelRatio.toFixed(2)}x`,
+                `effects   ${stage.effects ? 'bloom and vignette on' : stage.capable ? 'off' : 'off on WebGL2, to keep colours true'}`,
+                `fps       ${meter.fps} (lowest ${meter.worst})${morph.busy ? ' morphing' : ''}`,
+                `problems  ${problems.length ? problems.join(' | ') : 'none'}`
+            ].join('\n');
+        }
+    }
+
     // run the show when nobody has touched anything for a while
     quiet += dt;
     if (!director.active && ui.attract.checked && quiet >= QUIET_BEFORE_SHOW && !morph.busy) director.start();

@@ -30,9 +30,12 @@ Built with the [PlayCanvas](https://playcanvas.com) engine. The captures are by
 | `?device=webgl2` | Use WebGL2 instead of WebGPU. |
 | `?present` | Start in presentation mode. |
 | `?attract=0` | Do not run by itself; stay still until touched. |
+| `?debug` | Show the renderer, pack, frame rate and any errors on the page. Useful on a phone. |
+| `?effects=0` | Start with bloom and the vignette off. |
 
 It runs best where WebGPU is available (recent Chrome, Edge and Safari) and falls back to
-WebGL2 elsewhere.
+WebGL2 elsewhere. On WebGL2 the bloom is left out, because the engine's post-effect path
+washes out dark splats there; everything else is the same.
 
 ## Clips
 

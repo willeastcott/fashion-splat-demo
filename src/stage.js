@@ -190,6 +190,13 @@ export class Stage {
         app.root.addChild(floor);
         this.floor = floor;
 
+        // Bloom and the vignette render the scene to a linear-light target first. On WebGPU
+        // the splats come through that unchanged. On WebGL2 they do not: dark, faintly
+        // layered cloth comes out washed and grainy (seen in iOS Safari and in Chrome's
+        // WebGL2 alike). So on WebGL2 the scene is drawn straight to the screen, and the page
+        // lays a plain vignette over the canvas instead (see #vignette in index.html).
+        this.capable = app.graphicsDevice.isWebGPU;
+
         // bloom picks out what is brighter than white, which is the dots and waves of a morph
         const frame = new CameraFrame(app, camera.camera);
         frame.rendering.samples = 1;
@@ -200,17 +207,19 @@ export class Stage {
         frame.vignette.inner = 0.55;
         frame.vignette.outer = 1.45;
         frame.vignette.curvature = 0.7;
+        frame.enabled = this.capable;
         frame.update();
         this.frame = frame;
         this._applyBackdrop();
     }
 
-    /** Whether bloom and the vignette are on. */
+    /** Whether bloom and the vignette are on. They can only be on where `capable` is true. */
     get effects() {
         return this.frame.enabled;
     }
 
     set effects(on) {
+        on = on && this.capable;
         if (on === this.frame.enabled) return;
         this.frame.enabled = on;
         this.frame.update();

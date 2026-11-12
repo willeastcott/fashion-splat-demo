@@ -68,8 +68,14 @@ them if the look of the demo changes noticeably.
 
 ## Known gaps
 
-- Never run on a real phone. Frame rate and memory there are unknown.
+- Never run on a real phone. It has run in iOS 17 Safari in the Simulator (WebGL2, phone pack),
+  which is how the WebGL2 effects problem was found. Safari's WebGPU (iOS 26 and later, macOS
+  Safari 26) has not been tested at all: no automation was available for it. `?debug` shows
+  renderer, pack, frame rate and errors on the page for checking a device by hand.
 - On WebGL2 the splats are sorted on the CPU from rest positions, which is slower.
+- On WebGL2 the post effects (`CameraFrame`) are deliberately off: rendering splats through the
+  linear-light target washes out and speckles dark cloth there. WebGPU is unaffected. If the
+  engine fixes this, `Stage.capable` in `src/stage.js` is the switch.
 - View-dependent colour is dropped. It was measured at about 2.5% typical swing, so restoring it
   was judged not worth a larger download.
 - Joints were placed by eye from plots.
