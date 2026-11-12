@@ -42,7 +42,7 @@ The README explains how each part works; read it first.
 | `src/morph.js` | The splat container holding all three outfits, the morph shader, pack loading |
 | `src/pack.js` | The pack format and its decoder. Shared with the tools |
 | `src/callouts.js`, `src/shop.js` | Labels that ride the rig; look header, sizes and bag |
-| `src/stage.js` | Floor, contact shadows, bloom and vignette |
+| `src/stage.js` | Floor, contact shadows, light from the morph on the floor |
 | `src/director.js` | The scripted camera and show used when the demo runs itself |
 | `src/closeup.js` | Framing a piece, and the camera move in to a picked piece and back out |
 | `tools/build-morph.mjs` | Pairs gaussians across outfits and writes the packs |
@@ -91,6 +91,16 @@ films the full captures with view-dependent colour (`?detail=sh`), so it needs
 `public/morph-sh`. About five minutes a clip. Each replaced clip adds its full size to the
 history, so do not re-render them idly.
 
+`--edit=social` films a directed cut instead of the show as it runs: `tools/social-edit.mjs`
+holds its shot list, cues, captions, the PlayCanvas logo in the corner and the end card
+(the logo is `tools/brand/playcanvas-logo.png`), and places the camera by hand on every
+frame. Cuts fall on whole seconds to sit on the beat of a 120 BPM track, laid under the
+picture with `--music=<file> --music-offset=<s>`. `--stills=<folder>` photographs the start,
+middle and end of each shot for a look at the framing before a full render. The track used
+(an ElevenLabs Music generation, first beat at 0.15 s) is kept in `raw/social-music.mp3`,
+which is not in the repository. A cut shows something the live page hides: the engine places
+labels from the camera of the frame before, so the edit marks the view matrix stale itself.
+
 The image and the animation were rendered from the running app in the same spirit but by
 hand: the app's clock frozen (`app.timeScale = 0`) and advanced a frame at a time
 (`app.fire('update', 1 / 30)`), and the canvas composited with the page's labels.
@@ -128,9 +138,14 @@ hand: the app's clock frozen (`app.timeScale = 0`) and advanced a frame at a tim
   stepped it by hand and posted screenshots to a local receiver; iOS Safari ran in the
   Simulator.
 - On WebGL2 the splats are sorted on the CPU from rest positions, which is slower.
-- On WebGL2 the post effects (`CameraFrame`) are deliberately off: rendering splats through the
-  linear-light target washes out and speckles dark cloth there. WebGPU is unaffected. If the
-  engine fixes this, `Stage.capable` in `src/stage.js` is the switch.
+- There are no post effects. Bloom and a rendered vignette (`CameraFrame`) were on for WebGPU
+  until 12 Nov 2026, in the belief that only WebGL2 suffered from them. It was wrong: the
+  captures' author sent a desktop screenshot of the hoodie grey and grainy beside SuperSplat's
+  clean black. `CameraFrame` draws the scene into a linear-light target, so splats blend in
+  linear light, and faint pale gaussians through dark cloth count for far too much. Tested on
+  the same view: neither the decimation, the view-dependent colour, the bloom itself nor the
+  target's precision made any difference; only drawing straight to the screen did. Do not
+  bring post effects back unless the splats can still blend in display space.
 - View-dependent colour (`--sh` in `tools/build-morph.mjs`, `morphSH` in `src/morph.js`) is a
   palette, not the captured coefficients: it is off from them by 27 to 39% rms, as SOG files
   are. The engine re-runs the colours as the camera moves because the container claims
@@ -142,6 +157,8 @@ hand: the app's clock frozen (`app.timeScale = 0`) and advanced a frame at a tim
   differs slightly from the committed one even with nothing else changed.
 - `public/social.jpg` and `media/morph.gif` were rendered before view-dependent colour was
   added and before the highlight was removed. They have not been regenerated, so the link
-  preview and the README animation show the old look. The clips are current.
+  preview and the README animation show the old look. `media/clip-landscape.mp4` and
+  `clip-vertical.mp4` were filmed while bloom was still on, so they show dark cloth grey and
+  grainy; `media/clip-social.mp4` was filmed after it was removed.
 - Joints were placed by eye from plots.
 - No licence has been chosen for the code.
