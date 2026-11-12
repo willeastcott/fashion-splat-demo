@@ -8,6 +8,7 @@ import { Vec3 } from 'playcanvas';
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
 
+const OPENING = 2.4;        // seconds before the very first outfit change
 const LEAD_IN = 1.4;        // seconds an outfit is shown before the first piece is picked out
 const PER_PIECE = 1.5;      // seconds given to each piece...
 const LIT = 1.15;           // ...of which it is lit for this long
@@ -45,6 +46,9 @@ export class Director {
         this.active = true;
         this.time = 0;
         this.shown = 0;
+        // open with an outfit change, since that is what a visitor came to see; the tour of
+        // the pieces starts on the second outfit
+        this.opening = true;
 
         // ease into the scripted path from wherever the camera is now
         offset.sub2(this.camera.getPosition(), this.pivot);
@@ -94,6 +98,17 @@ export class Director {
             return;
         }
         this.shown += dt;
+        if (this.opening) {
+            if (this.shown < OPENING) return;
+            this.opening = false;
+            const next = this.morph.nextReady(this.morph.from);
+            if (next >= 0) {
+                this.change(next);
+                return;
+            }
+            // nothing else has loaded yet: tour this outfit's pieces while waiting
+            this.shown = 0;
+        }
         const pieces = [];
         this.defs[this.morph.from].callouts.forEach((def, i) => {
             if (def.id && !def.of) pieces.push(i);
