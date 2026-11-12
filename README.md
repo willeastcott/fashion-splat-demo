@@ -158,4 +158,6 @@ placing a new callout in `src/figures.js`.
   full pack, without it). It carries the same licence and the same credit.
 - **Engine:** [PlayCanvas](https://github.com/playcanvas/engine), MIT.
 - **Product names and prices** are invented for the demo. They do not describe the real garments.
-- **Code:** no licence has been chosen for the code in this repository yet.
+- **Code:** [MIT](LICENSE). The licence covers the code only: the outfit data in `public/morph-*`
+  and the images and clips made from it stay under CC BY 4.0, with the credit above, and the
+  PlayCanvas logo in `tools/brand/` remains PlayCanvas's.

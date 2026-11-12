@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "The future of clothes shopping: three captured outfits as Gaussian splats, rigged, labelled and morphing from one look to the next. Built with PlayCanvas.",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "homepage": "https://willeastcott.github.io/splat-fashion/",
   "repository": "github:willeastcott/splat-fashion",
