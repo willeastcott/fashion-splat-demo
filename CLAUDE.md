@@ -61,6 +61,17 @@ The README explains how each part works; read it first.
   captures in `raw/`, which are not in the repository; the README says where to get them. Avoid
   committing rebuilt packs unless they actually changed, since each commit adds their full size
   to the history.
+- Never switch the camera's `CameraControls` script off (`controls.enabled = false`) to move the
+  camera yourself. It counts button presses against releases, and one made while it is off is
+  lost: press during a scripted move, let go after it, and the count is left at -1, with the
+  camera deaf to dragging until the page is reloaded. Leave it on and set `controls.focusPoint`
+  every frame of the move, as `src/closeup.js` and `src/director.js` do; that keeps it holding
+  the camera where you put it. Do not hand the camera back with `controls.reset` either: it
+  eases in from the controls' own last pose.
+- Camera moves ease on `ease`, `zoomed` and `panned` in `src/closeup.js`: no speed or
+  acceleration at either end, distance changed by ratio, and the piece drifting evenly across
+  the screen. Check a change to them by recording the camera frame by frame at a fixed step,
+  not by eye.
 - To judge the morph or any motion, freeze it: `demo.morph.duration = 1e9`, start a morph, then
   set `demo.morph.progress`. `window.demo` exposes the app's parts in the console.
 - The dev server is `npm run dev` on port 5173 by default; `.claude/launch.json` starts it on
