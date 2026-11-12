@@ -95,6 +95,7 @@ export class Callouts {
             d: 0,               // anchor's offset across the view from the figure's axis, metres
             ax: 0, ay: 0,       // anchor on screen
             tx: 0, ty: 0,       // target for the label's inner bottom corner
+            floor: 0,           // as low as that corner may go and stay clear of the page's other UI
             x: 0, y: 0,
             w: 0, h: 0, lw: 0
         };
@@ -155,6 +156,9 @@ export class Callouts {
         const colL = Math.max(cx - reach, inset);
         const colR = Math.min(cx + reach, W - inset);
 
+        // the other UI on the page, which labels keep clear of
+        const rects = this.avoid.map(e => e.getBoundingClientRect()).filter(r => r.width > 0);
+
         // ---- where each anchor is, and whether it can be seen ---------------------------------
         this.slots.forEach((slot, i) => {
             const a = from[i], b = to[i];
@@ -197,7 +201,10 @@ export class Callouts {
             slot.ax = screen.x;
             slot.ay = screen.y;
             const onScreen = depth > 0.1 && screen.x > -20 && screen.x < W + 20 && screen.y > -20 && screen.y < H + 20;
-            if (this.enabled && slot.want && onScreen) slot.vis = smoothstep(0.02, 0.3, facing);
+            // a point that is behind a button has nothing to point at: with the camera in close,
+            // the pieces round the edge of the view end up under the page's controls
+            const covered = rects.some(r => screen.x > r.left && screen.x < r.right && screen.y > r.top && screen.y < r.bottom);
+            if (this.enabled && slot.want && onScreen && !covered) slot.vis = smoothstep(0.02, 0.3, facing);
 
             // how far across the view the anchor is from the figure's axis, metres
             slot.d = (world.x - axis.x) * right.x + (world.z - axis.z) * right.z;
@@ -219,31 +226,32 @@ export class Callouts {
         }
 
         // ---- stack the labels in their columns ------------------------------------------------
-        const rects = this.avoid.map(e => e.getBoundingClientRect()).filter(r => r.width > 0);
+        // The page's other UI sits round the edges, so what it leaves a label is a stretch of
+        // its column: below whatever is above it (the look's name) and above whatever is below
+        // (the sizes, the outfit buttons). Labels are stacked down from the top of that
+        // stretch, then pushed back up from the bottom of it if they run over.
         for (const side of [-1, 1]) {
             const col = side < 0 ? colL : colR;
             const list = this.slots.filter(s => s.wantSide === side && (s.vis > 0 || s.alpha > 0.01));
             list.sort((p, q) => p.ay - q.ay);
             let prev = -Infinity;
             for (const s of list) {
-                let y = s.ay - (compact ? 10 : 16);
                 const x0 = side < 0 ? col - s.w : col;
                 const x1 = x0 + s.w;
+                let top = GAP, bottom = H - GAP;
                 for (const r of rects) {
                     if (x1 < r.left - GAP || x0 > r.right + GAP) continue;
-                    if (y > r.top - GAP && y - s.h < r.bottom + GAP) {
-                        // step past it, away from the nearer screen edge
-                        y = r.top + r.bottom < H ? r.bottom + GAP + s.h : r.top - GAP;
-                    }
+                    if (r.top + r.bottom < H) top = Math.max(top, r.bottom + GAP);
+                    else bottom = Math.min(bottom, r.top - GAP);
                 }
-                y = Math.max(y, prev + s.h + GAP, s.h + GAP);
-                prev = y;
+                s.floor = bottom;
                 s.tx = col;
-                s.ty = y;
+                s.ty = prev = Math.max(s.ay - (compact ? 10 : 16), prev + s.h + GAP, top + s.h);
             }
-            let limit = H - GAP;
+            let limit = Infinity;
             for (let k = list.length - 1; k >= 0; k--) {
                 const s = list[k];
+                limit = Math.min(limit, s.floor);
                 if (s.ty > limit) s.ty = limit;
                 limit = s.ty - s.h - GAP;
             }

@@ -236,6 +236,8 @@ const markActive = () => {
 };
 markActive();
 
+// when the last of the outfits had arrived (or failed to), or 0 while they are still coming
+let loaded = 0;
 // fetch the remaining outfits one at a time; each button fills as its outfit arrives
 buttons.forEach((b, i) => b.classList.toggle('waiting', !morph.ready[i]));
 (async () => {
@@ -251,6 +253,7 @@ buttons.forEach((b, i) => b.classList.toggle('waiting', !morph.ready[i]));
             button.title = 'This outfit could not be loaded';
         }
     }
+    loaded = performance.now();
 })();
 
 // ---- shopping layer ------------------------------------------------------------------------
@@ -260,7 +263,7 @@ const callouts = new Callouts(
     document.getElementById('overlay'),
     defs,
     formatPrice,
-    ['look', 'buy', 'panel', 'outfits'].map(id => document.getElementById(id))
+    ['look', 'buy', 'bag', 'panel', 'outfits', 'credit'].map(id => document.getElementById(id))
 );
 
 // ---- presentation mode ---------------------------------------------------------------------
@@ -336,6 +339,8 @@ window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement && e.target.type !== 'checkbox') return;
     if (e.key === 'p' || e.key === 'P') setPresenting(!presenting);
     if (e.key === 'Escape' && presenting) setPresenting(false);
+    // otherwise Esc lets go of a piece that was picked, like a click on the scene
+    else if (e.key === 'Escape') callouts.pinned = -1;
 });
 // A tap or click on the scene lets go of a piece that was picked. A drag does not: that is the
 // viewer looking round the piece the camera has come in to.
@@ -356,7 +361,12 @@ if (params.has('present')) setPresenting(true);
 // ---- frame ---------------------------------------------------------------------------------
 const cameraPos = new Vec3();
 let restTime = 0;
+// seconds of slow frames and of fast ones lately, for adjusting the resolution (see below)
 let slow = 0;
+let fast = 0;
+let raised = false;         // whether the last change to the resolution was upward
+let raiseAfter = 20;        // seconds of fast frames before trying a higher resolution
+const fullRatio = device.maxPixelRatio;
 const meter = { frames: 0, since: performance.now(), fps: 0, worst: Infinity };
 app.on('update', (dt) => {
     if (debug) {
@@ -364,7 +374,9 @@ app.on('update', (dt) => {
         const now = performance.now();
         if (now - meter.since >= 1000) {
             meter.fps = Math.round(meter.frames * 1000 / (now - meter.since));
-            meter.worst = Math.min(meter.worst, meter.fps);
+            // the lowest rate is for judging a device by, so it leaves out the stalls while
+            // the outfits are still arriving and being unpacked, and any time spent hidden
+            if (loaded && now - loaded > 3000 && !document.hidden) meter.worst = Math.min(meter.worst, meter.fps);
             meter.frames = 0;
             meter.since = now;
             debug.textContent = [
@@ -373,7 +385,7 @@ app.on('update', (dt) => {
                 `outfits   ${morph.ready.filter(Boolean).length} of ${morph.ready.length} loaded`,
                 `canvas    ${canvas.width}x${canvas.height} at ${device.maxPixelRatio.toFixed(2)}x`,
                 `effects   ${stage.effects ? 'bloom and vignette on' : stage.capable ? 'off' : 'off on WebGL2, to keep colours true'}`,
-                `fps       ${meter.fps} (lowest ${meter.worst})${morph.busy ? ' morphing' : ''}`,
+                `fps       ${meter.fps} (lowest ${Number.isFinite(meter.worst) ? meter.worst : 'not measured yet'})${morph.busy ? ' morphing' : ''}`,
                 `problems  ${problems.length ? problems.join(' | ') : 'none'}`
             ].join('\n');
         }
@@ -403,13 +415,25 @@ app.on('update', (dt) => {
         closeup.update(dt);
     }
 
-    // a device that cannot keep up renders at a lower resolution, a step at a time
+    // A device that cannot keep up renders at a lower resolution, a step at a time. What
+    // slowed it may pass (a close-up fills more of the screen than the whole figure does), so
+    // after a good spell of fast frames it tries a step back up. If that turns out too much
+    // and it has to come down again, it waits twice as long before the next try, so it does
+    // not go on switching back and forth.
     if (!morph.busy && !document.hidden) {
         slow = dt > 1 / 28 ? slow + dt : Math.max(0, slow - dt);
+        fast = dt < 1 / 45 ? fast + dt : Math.max(0, fast - 4 * dt);
         if (slow > 3 && device.maxPixelRatio > 1) {
             device.maxPixelRatio = Math.max(1, device.maxPixelRatio * 0.8);
             app.resizeCanvas();
-            slow = 0;
+            if (raised) raiseAfter *= 2;
+            raised = false;
+            slow = fast = 0;
+        } else if (fast > raiseAfter && device.maxPixelRatio < fullRatio) {
+            device.maxPixelRatio = Math.min(fullRatio, device.maxPixelRatio * 1.25);
+            app.resizeCanvas();
+            raised = true;
+            slow = fast = 0;
         }
     }
 
