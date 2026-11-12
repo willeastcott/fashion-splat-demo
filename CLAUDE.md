@@ -71,10 +71,16 @@ them if the look of the demo changes noticeably.
 - Never run on a real phone. It has run in iOS 17 Safari in the Simulator (WebGL2, phone pack),
   which is how the WebGL2 effects problem was found. `?debug` shows renderer, pack, frame rate
   and errors on the page for checking a device by hand.
-- WebGPU is only used in Chromium browsers (`chromium` in `src/main.js`). Safari's and
-  Firefox's WebGPU have not been tested at all: no automation was available for Safari, and
-  headless Firefox has no adapter. Test with `?device=webgpu`; if it works in both, remove the
-  guard so they get the faster path and the bloom.
+- WebGPU has been checked on a Mac in Chrome, Firefox 156 and Safari 26 (rest and mid-morph
+  frames match Chrome's). Phones and tablets start on WebGL2 (`PHONES_USE_WEBGPU` in
+  `src/main.js`) because WebGPU has not been tried on phone hardware. Test there with
+  `?device=webgpu&debug`; if it holds up, set the flag to true so phones get the faster path
+  and the bloom.
+- How the browsers were checked without a person at the screen: headless Firefox has no WebGPU
+  adapter, so Firefox was run with a window and a temporary profile and driven over its
+  Marionette port; Safari's WebDriver was off, so a temporary page loaded the app in a frame,
+  stepped it by hand and posted screenshots to a local receiver; iOS Safari ran in the
+  Simulator.
 - On WebGL2 the splats are sorted on the CPU from rest positions, which is slower.
 - On WebGL2 the post effects (`CameraFrame`) are deliberately off: rendering splats through the
   linear-light target washes out and speckles dark cloth there. WebGPU is unaffected. If the

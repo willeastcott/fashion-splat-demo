@@ -59,13 +59,14 @@ const fail = (message, err) => {
     throw err;
 };
 
-// WebGPU sorts on the GPU and is close to twice as fast, but this demo's shaders have only
-// been run through Chromium's WebGPU. Safari and Firefox compile WGSL with compilers of their
-// own, which have not been tried, so those browsers take the WebGL2 path, which has been
-// checked in both. ?device=webgpu tries WebGPU anywhere; if it holds up in Safari and Firefox,
-// this guard can go.
-const chromium = /\bChrome\//.test(navigator.userAgent) && !/\bFirefox\//.test(navigator.userAgent);
-const deviceTypes = params.get('device') ? [params.get('device')] : (chromium ? ['webgpu', 'webgl2'] : ['webgl2']);
+// WebGPU sorts on the GPU, is close to twice as fast, and is the only path with bloom. It has
+// been run through all three WebGPU implementations on a desktop: Chrome's, Firefox's and
+// Safari's. It has not been run on a phone, where memory and GPU limits are tighter, so phones
+// and tablets start on WebGL2, which has been checked in iOS Safari. Once WebGPU has been seen
+// working on real phones (try it there with ?device=webgpu&debug), set this to true.
+const PHONES_USE_WEBGPU = false;
+const handheld = matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
+const deviceTypes = params.get('device') ? [params.get('device')] : (handheld && !PHONES_USE_WEBGPU ? ['webgl2'] : ['webgpu', 'webgl2']);
 
 let device;
 try {
@@ -328,7 +329,7 @@ app.on('update', (dt) => {
             meter.frames = 0;
             meter.since = now;
             debug.textContent = [
-                `renderer  ${device.deviceType}${device.isWebGPU ? '' : navigator.gpu ? (deviceTypes.includes('webgpu') ? ' (WebGPU failed to start)' : ' (WebGPU not tried in this browser: add ?device=webgpu)') : ' (no WebGPU here)'}`,
+                `renderer  ${device.deviceType}${device.isWebGPU ? '' : navigator.gpu ? (deviceTypes.includes('webgpu') ? ' (WebGPU failed to start)' : ' (WebGPU is not the default on phones yet: add ?device=webgpu)') : ' (no WebGPU here)'}`,
                 `pack      ${loadedTier}, ${morph.count.toLocaleString()} slots`,
                 `outfits   ${morph.ready.filter(Boolean).length} of ${morph.ready.length} loaded`,
                 `canvas    ${canvas.width}x${canvas.height} at ${device.maxPixelRatio.toFixed(2)}x`,
