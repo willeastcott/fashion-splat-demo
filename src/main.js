@@ -165,6 +165,8 @@ const ui = {
     intensityValue: document.getElementById('intensityValue'),
     outfits: document.getElementById('outfits')
 };
+// ?attract=0 keeps the demo still until it is touched, for embedding or for a fixed view
+if (params.get('attract') === '0') ui.attract.checked = false;
 ui.intensity.addEventListener('input', () => {
     ui.intensityValue.textContent = Number(ui.intensity.value).toFixed(1);
 });

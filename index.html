@@ -20,7 +20,9 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111214'/%3E%3Ccircle cx='16' cy='9' r='4' fill='%23e8e6e1'/%3E%3Cpath d='M9 28c0-8 2-13 7-13s7 5 7 13z' fill='%23e8e6e1'/%3E%3C/svg%3E">
     <style>
         :root { color-scheme: dark; --ink: #e8e6e1; --paper: #111214; }
-        html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); }
+        html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+        /* no double-tap zoom on the controls */
+        button, summary, label { touch-action: manipulation; }
         canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
         /* callouts: lines in an svg, labels as elements, both placed from script every frame */
@@ -57,14 +59,14 @@
         #bag { font-size: 11px; opacity: 0.6; font-variant-numeric: tabular-nums; }
 
         /* developer controls */
-        #panel { position: fixed; left: 16px; bottom: 16px; border-radius: 10px; background: rgba(18, 19, 22, 0.72); backdrop-filter: blur(10px); user-select: none; }
+        #panel { position: fixed; left: 16px; bottom: 16px; border-radius: 10px; background: rgba(18, 19, 22, 0.72); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); user-select: none; }
         #panel summary { padding: 7px 12px; cursor: pointer; font-size: 12px; color: #c9c6bf; }
         #panel .controls { display: grid; gap: 8px; min-width: 190px; padding: 4px 14px 12px; }
         #panel label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
         #panel .row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
         #panel input[type=range] { width: 100%; }
 
-        #outfits { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; gap: 6px; padding: 5px; border-radius: 999px; background: rgba(18, 19, 22, 0.72); backdrop-filter: blur(10px); }
+        #outfits { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; gap: 6px; padding: 5px; border-radius: 999px; background: rgba(18, 19, 22, 0.72); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
         #outfits button { all: unset; cursor: pointer; padding: 7px 16px; border-radius: 999px; font-size: 13px; color: #c9c6bf; }
         #outfits button:hover { color: #fff; }
         #outfits button.active { background: var(--ink); color: var(--paper); }
@@ -83,7 +85,7 @@
         #status.failed .note { opacity: 0.9; }
 
         /* presentation mode: the demo runs itself, so the developer controls and the pointer go */
-        #hint { position: fixed; left: 50%; top: 22px; transform: translateX(-50%); padding: 7px 14px; border-radius: 999px; background: rgba(18, 19, 22, 0.72); backdrop-filter: blur(10px); font-size: 12px; color: #c9c6bf; opacity: 0; pointer-events: none; transition: opacity 0.4s; }
+        #hint { position: fixed; left: 50%; top: 22px; transform: translateX(-50%); padding: 7px 14px; border-radius: 999px; background: rgba(18, 19, 22, 0.72); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); font-size: 12px; color: #c9c6bf; opacity: 0; pointer-events: none; transition: opacity 0.4s; }
         #hint.show { opacity: 1; }
         body.presenting #panel { display: none; }
         body.presenting, body.presenting .callout { cursor: none; }
@@ -95,12 +97,13 @@
         @media (max-width: 640px) {
             #look { left: 16px; top: 14px; }
             #look h1 { font-size: 26px; }
-            #buy { left: 16px; right: 16px; bottom: 96px; grid-auto-flow: column; justify-content: space-between; align-items: center; }
-            #outfits { bottom: 46px; }
+            /* clear of the home indicator on phones without a home button */
+            #buy { left: 16px; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); grid-auto-flow: column; justify-content: space-between; align-items: center; }
+            #outfits { bottom: calc(46px + env(safe-area-inset-bottom, 0px)); }
             #sizes button { width: 34px; }
             #add { min-width: 0; padding: 9px 16px; }
             #bag { position: fixed; right: 16px; top: 18px; }
-            #credit { left: 12px; right: 12px; bottom: 6px; max-width: none; text-align: center; }
+            #credit { left: 12px; right: 12px; bottom: calc(6px + env(safe-area-inset-bottom, 0px)); max-width: none; text-align: center; }
             #panel { display: none; }
             .callout { font-size: 11px; padding-bottom: 4px; }
             .callout-head { display: block; }

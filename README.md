@@ -29,9 +29,17 @@ Built with the [PlayCanvas](https://playcanvas.com) engine. The captures are by
 | `?detail=lite` / `standard` / `full` | 500k, 1M or about 2.9M gaussians per outfit. Phones get `lite` by default, everything else `standard`. |
 | `?device=webgl2` | Use WebGL2 instead of WebGPU. |
 | `?present` | Start in presentation mode. |
+| `?attract=0` | Do not run by itself; stay still until touched. |
 
 It runs best where WebGPU is available (recent Chrome, Edge and Safari) and falls back to
 WebGL2 elsewhere.
+
+## Clips
+
+[`media/clip-landscape.mp4`](media/clip-landscape.mp4) and
+[`media/clip-vertical.mp4`](media/clip-vertical.mp4) are 30-second, 1080p recordings of the demo
+running itself at full detail, rendered frame by frame rather than screen-recorded. They are
+there to be shared; please keep the capture credit with them.
 
 ## How it works
 

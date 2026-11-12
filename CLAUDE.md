@@ -58,6 +58,14 @@ The README explains how each part works; read it first.
   5183 for the preview pane.
 - Pushing to `main` publishes to GitHub Pages through `.github/workflows/deploy.yml`.
 
+## Media
+
+`public/social.jpg` is the link-preview image, `media/morph.gif` is the README animation, and
+`media/clip-*.mp4` are share clips. They were rendered from the running app, frame by frame at
+a fixed 30 fps, by freezing the app's clock (`app.timeScale = 0`), advancing it by hand
+(`app.fire('update', 1 / 30)`) and compositing the canvas with the page's labels. Regenerate
+them if the look of the demo changes noticeably.
+
 ## Known gaps
 
 - Never run on a real phone. Frame rate and memory there are unknown.
