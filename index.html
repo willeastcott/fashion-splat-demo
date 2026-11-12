@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>The Future of Clothes Shopping · a Gaussian splat demo</title>
+    <meta name="description" content="Three captured outfits on one mannequin, in your browser: rigged, breathing, labelled, and morphing from one look to the next. A Gaussian splatting demo built with PlayCanvas.">
+    <meta name="theme-color" content="#111214">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="The Future of Clothes Shopping">
+    <meta property="og:description" content="Three captured outfits on one mannequin: rigged, breathing, labelled, and morphing from one look to the next. Gaussian splats, live in your browser.">
+    <meta property="og:url" content="https://willeastcott.github.io/fashion-splat-demo/">
+    <meta property="og:image" content="https://willeastcott.github.io/fashion-splat-demo/social.jpg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The Future of Clothes Shopping">
+    <meta name="twitter:description" content="Three captured outfits on one mannequin: rigged, breathing, labelled, and morphing from one look to the next. Gaussian splats, live in your browser.">
+    <meta name="twitter:image" content="https://willeastcott.github.io/fashion-splat-demo/social.jpg">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111214'/%3E%3Ccircle cx='16' cy='9' r='4' fill='%23e8e6e1'/%3E%3Cpath d='M9 28c0-8 2-13 7-13s7 5 7 13z' fill='%23e8e6e1'/%3E%3C/svg%3E">
+    <style>
+        :root { color-scheme: dark; --ink: #e8e6e1; --paper: #111214; }
+        html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); }
+        canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+        /* callouts: lines in an svg, labels as elements, both placed from script every frame */
+        #overlay { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
+        #overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+        #overlay path { fill: none; stroke: rgba(232, 230, 225, 0.8); stroke-width: 1; }
+        #overlay .dot { fill: #fff; }
+        #overlay .halo { fill: none; stroke: rgba(255, 255, 255, 0.6); stroke-width: 1; transform-box: fill-box; transform-origin: center; animation: halo 2.4s ease-out infinite; }
+        @keyframes halo { 0% { transform: scale(0.45); opacity: 0.9; } 70%, 100% { transform: scale(1.6); opacity: 0; } }
+        .callout { position: absolute; left: 0; top: 0; padding: 0 2px 6px; white-space: nowrap; cursor: pointer; opacity: 0; user-select: none; will-change: transform, opacity; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7); }
+        .callout.left { text-align: right; }
+        .callout-head { display: flex; gap: 14px; justify-content: space-between; font-weight: 600; letter-spacing: 0.01em; }
+        .callout.left .callout-head { flex-direction: row-reverse; }
+        .callout-price { font-weight: 400; font-variant-numeric: tabular-nums; }
+        .callout-note { font-size: 11px; opacity: 0.62; margin-top: 1px; }
+
+        /* look header */
+        #look { position: fixed; left: 24px; top: 22px; pointer-events: none; user-select: none; }
+        #look .eyebrow { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.6; }
+        #look h1 { margin: 3px 0 4px; font: 400 34px/1.1 Didot, "Bodoni 72", "Playfair Display", "Times New Roman", serif; letter-spacing: 0.01em; }
+        #look .meta { opacity: 0.82; font-variant-numeric: tabular-nums; }
+        #look .swap { display: inline-block; transition: opacity 0.2s, transform 0.2s; }
+        #look.out .swap { opacity: 0; transform: translateY(6px); }
+
+        /* size and bag */
+        #buy { position: fixed; right: 16px; bottom: 60px; display: grid; gap: 8px; justify-items: end; user-select: none; }
+        #sizes { display: flex; gap: 6px; }
+        #sizes button { all: unset; box-sizing: border-box; cursor: pointer; width: 36px; height: 30px; line-height: 28px; text-align: center; border-radius: 6px; border: 1px solid rgba(232, 230, 225, 0.28); font-size: 12px; color: #c9c6bf; }
+        #sizes button:hover { border-color: rgba(232, 230, 225, 0.6); }
+        #sizes button.active { border-color: var(--ink); color: #fff; }
+        #add { all: unset; box-sizing: border-box; cursor: pointer; min-width: 162px; padding: 10px 18px; border-radius: 999px; background: var(--ink); color: var(--paper); font-size: 13px; font-weight: 600; text-align: center; transition: background 0.15s; }
+        #add:hover { background: #fff; }
+        #add.done { background: #b9d8c0; }
+        #bag { font-size: 11px; opacity: 0.6; font-variant-numeric: tabular-nums; }
+
+        /* developer controls */
+        #panel { position: fixed; left: 16px; bottom: 16px; border-radius: 10px; background: rgba(18, 19, 22, 0.72); backdrop-filter: blur(10px); user-select: none; }
+        #panel summary { padding: 7px 12px; cursor: pointer; font-size: 12px; color: #c9c6bf; }
+        #panel .controls { display: grid; gap: 8px; min-width: 190px; padding: 4px 14px 12px; }
+        #panel label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+        #panel .row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+        #panel input[type=range] { width: 100%; }
+
+        #outfits { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; gap: 6px; padding: 5px; border-radius: 999px; background: rgba(18, 19, 22, 0.72); backdrop-filter: blur(10px); }
+        #outfits button { all: unset; cursor: pointer; padding: 7px 16px; border-radius: 999px; font-size: 13px; color: #c9c6bf; }
+        #outfits button:hover { color: #fff; }
+        #outfits button.active { background: var(--ink); color: var(--paper); }
+        /* an outfit still downloading: its button fills from the left as the data arrives */
+        #outfits button.waiting { cursor: progress; color: #8a8882; background: linear-gradient(to right, rgba(232, 230, 225, 0.16) var(--loaded, 0%), transparent var(--loaded, 0%)); }
+        #outfits button.failed { cursor: not-allowed; color: #8a8882; text-decoration: line-through; }
+        #credit { position: fixed; right: 16px; bottom: 14px; max-width: 250px; font-size: 11px; line-height: 1.5; opacity: 0.6; text-align: right; }
+        #credit a { color: inherit; }
+        /* shown until the first outfit has arrived, and for anything that goes wrong before then */
+        #status { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(260px, 70vw); text-align: center; }
+        #status .title { font: 400 22px/1.2 Didot, "Bodoni 72", "Playfair Display", "Times New Roman", serif; margin-bottom: 14px; }
+        #status .bar { height: 2px; background: rgba(232, 230, 225, 0.16); border-radius: 2px; overflow: hidden; }
+        #status .bar i { display: block; height: 100%; width: 0; background: var(--ink); transition: width 0.2s; }
+        #status .note { margin-top: 12px; font-size: 12px; opacity: 0.6; }
+        #status.failed .bar { display: none; }
+        #status.failed .note { opacity: 0.9; }
+
+        /* presentation mode: the demo runs itself, so the developer controls and the pointer go */
+        #hint { position: fixed; left: 50%; top: 22px; transform: translateX(-50%); padding: 7px 14px; border-radius: 999px; background: rgba(18, 19, 22, 0.72); backdrop-filter: blur(10px); font-size: 12px; color: #c9c6bf; opacity: 0; pointer-events: none; transition: opacity 0.4s; }
+        #hint.show { opacity: 1; }
+        body.presenting #panel { display: none; }
+        body.presenting, body.presenting .callout { cursor: none; }
+
+        body.loading #look, body.loading #buy, body.loading #panel, body.loading #outfits, body.loading #credit { visibility: hidden; }
+
+        /* phones: sizes and the bag button share a row above the outfit buttons, the bag count
+           moves to the top corner, and callouts drop to a name and a price */
+        @media (max-width: 640px) {
+            #look { left: 16px; top: 14px; }
+            #look h1 { font-size: 26px; }
+            #buy { left: 16px; right: 16px; bottom: 96px; grid-auto-flow: column; justify-content: space-between; align-items: center; }
+            #outfits { bottom: 46px; }
+            #sizes button { width: 34px; }
+            #add { min-width: 0; padding: 9px 16px; }
+            #bag { position: fixed; right: 16px; top: 18px; }
+            #credit { left: 12px; right: 12px; bottom: 6px; max-width: none; text-align: center; }
+            #panel { display: none; }
+            .callout { font-size: 11px; padding-bottom: 4px; }
+            .callout-head { display: block; }
+            .callout-name, .callout-price { display: block; }
+            .callout-note { display: none; }
+        }
+    </style>
+</head>
+<body class="loading">
+    <canvas id="app"></canvas>
+    <div id="overlay"></div>
+    <div id="status">
+        <div class="title">The Future of Clothes Shopping</div>
+        <div class="bar"><i></i></div>
+        <div class="note">Loading the first look…</div>
+    </div>
+    <div id="hint">Press P or Esc, or click, to leave presentation mode</div>
+
+    <header id="look">
+        <div class="eyebrow"><span class="swap" id="lookIndex"></span></div>
+        <h1><span class="swap" id="lookName"></span></h1>
+        <div class="meta"><span class="swap" id="lookPieces"></span> · <span id="lookTotal"></span></div>
+    </header>
+
+    <div id="buy">
+        <div id="sizes"></div>
+        <button id="add">Add look to bag</button>
+        <div id="bag">Bag (0)</div>
+    </div>
+
+    <details id="panel">
+        <summary>Controls</summary>
+        <div class="controls">
+            <label><input type="checkbox" id="attract" checked> Run by itself when idle</label>
+            <label><input type="checkbox" id="present"> Presentation mode (P)</label>
+            <label><input type="checkbox" id="effects" checked> Bloom and vignette</label>
+            <label><input type="checkbox" id="cycle"> Cycle outfits</label>
+            <label><input type="checkbox" id="spin"> Turn on change</label>
+            <label><input type="checkbox" id="labels" checked> Callouts</label>
+            <label><input type="checkbox" id="idle" checked> Idle animation</label>
+            <label><input type="checkbox" id="follow" checked> Head follows camera</label>
+            <label><input type="checkbox" id="weights"> Show rig weights</label>
+            <div class="row"><span>Intensity</span><span id="intensityValue">1.0</span></div>
+            <input type="range" id="intensity" min="0" max="4" step="0.1" value="1">
+        </div>
+    </details>
+    <div id="outfits"></div>
+    <div id="credit">Captures: <a href="https://superspl.at/user/schindelar3d" target="_blank" rel="noopener">Christoph Schindelar</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a> · Built with <a href="https://playcanvas.com" target="_blank" rel="noopener">PlayCanvas</a></div>
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "fashion-splat-demo",
+  "version": "1.0.0",
+  "description": "The future of clothes shopping: three captured outfits as Gaussian splats, rigged, labelled and morphing from one look to the next. Built with PlayCanvas.",
+  "private": true,
+  "type": "module",
+  "homepage": "https://willeastcott.github.io/fashion-splat-demo/",
+  "repository": "github:willeastcott/fashion-splat-demo",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "data": "sh tools/build-data.sh"
+  },
+  "dependencies": {
+    "playcanvas": "^2.24.0"
+  },
+  "devDependencies": {
+    "vite": "^8.3.8"
+  }
+}

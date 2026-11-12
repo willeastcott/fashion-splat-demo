@@ -1,0 +1,8 @@
+node_modules
+dist
+
+# the original captures (about 2.6 GB) and the plots used to place the rig; see the README
+raw
+analysis
+
+.DS_Store
