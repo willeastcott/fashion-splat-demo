@@ -29,6 +29,8 @@ The README explains how each part works; read it first.
   to it instead (`src/closeup.js`), and the show does the same.
 - **Credit.** The captures are CC BY 4.0 by Christoph Schindelar. Keep the credit visible in the
   app, in the share image and in the README.
+- **Licences.** The code is MIT (`LICENSE`). That does not cover the outfit data in
+  `public/morph-*` or anything rendered from it, which stay CC BY 4.0 with the credit above.
 - **Product names and prices are placeholders** and say so in the README. Do not present them as
   real.
 
@@ -161,4 +163,3 @@ hand: the app's clock frozen (`app.timeScale = 0`) and advanced a frame at a tim
   `clip-vertical.mp4` were filmed while bloom was still on, so they show dark cloth grey and
   grainy; `media/clip-social.mp4` was filmed after it was removed.
 - Joints were placed by eye from plots.
-- No licence has been chosen for the code.
