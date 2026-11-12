@@ -180,6 +180,16 @@ const controls = camera.script.create(CameraControls, {
         zoomRange: new Vec2(0.8, 9)
     }
 });
+// The controls turn the camera a set angle for each pixel dragged (0.2 of a degree). That suits
+// a desktop window, where a drag across it is most of a turn, but a phone is a third as wide,
+// and a swipe from one edge to the other came to a fifth of a turn. So on a narrow window the
+// angle for each pixel goes up, to make a swipe right across it half a turn at least.
+const TURN_PER_SWIPE = 180;         // degrees, for a drag the full width of the window
+const setTurnSpeed = () => {
+    controls.rotateSpeed = Math.max(0.2, TURN_PER_SWIPE / window.innerWidth);
+};
+setTurnSpeed();
+window.addEventListener('resize', setTurnSpeed);
 
 // ---- studio: floor, shadows ---------------------------------------------------------------
 const stage = new Stage(app, camera);
@@ -335,13 +345,23 @@ window.addEventListener('keydown', (e) => {
 // A tap or click on the scene lets go of a piece that was picked. A drag does not: that is the
 // viewer looking round the piece the camera has come in to.
 let press = null;
+// for ?debug: how far the last drag went across the screen, and how far it turned the camera
+const drag = { px: 0, turned: 0, yaw: 0 };
+const yawNow = () => {
+    const p = camera.getPosition(), f = controls.focusPoint;
+    return Math.atan2(p.x - f.x, p.z - f.z) * 180 / Math.PI;
+};
 canvas.addEventListener('pointerdown', (e) => {
+    drag.px = 0;
+    drag.turned = 0;
+    drag.yaw = yawNow();
     // a tap or click on the scene leaves presentation mode, since a phone has no keys
     if (presenting) setPresenting(false);
     press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now() };
 });
 canvas.addEventListener('pointerup', (e) => {
     if (!press || press.id !== e.pointerId) return;
+    drag.px = Math.round(e.clientX - press.x);
     const tap = Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8 && performance.now() - press.at < 500;
     press = null;
     if (tap) callouts.pinned = -1;
@@ -360,6 +380,10 @@ const fullRatio = device.maxPixelRatio;
 const meter = { frames: 0, since: performance.now(), fps: 0, worst: Infinity };
 app.on('update', (dt) => {
     if (debug) {
+        // the camera goes on turning for a moment after the finger lifts, so add it up as it goes
+        const yaw = yawNow();
+        drag.turned += yaw - drag.yaw - 360 * Math.round((yaw - drag.yaw) / 360);
+        drag.yaw = yaw;
         meter.frames++;
         const now = performance.now();
         if (now - meter.since >= 1000) {
@@ -374,6 +398,7 @@ app.on('update', (dt) => {
                 `pack      ${loadedTier}, ${morph.count.toLocaleString()} slots${morph.sh ? `, view-dependent colour ${morph.viewColour ? 'on' : 'off'}` : ''}`,
                 `outfits   ${morph.ready.filter(Boolean).length} of ${morph.ready.length} loaded`,
                 `canvas    ${canvas.width}x${canvas.height} at ${device.maxPixelRatio.toFixed(2)}x`,
+                `last drag ${drag.px} px across a ${window.innerWidth} px window turned the camera ${Math.round(drag.turned)} degrees`,
                 `fps       ${meter.fps} (lowest ${Number.isFinite(meter.worst) ? meter.worst : 'not measured yet'})${morph.busy ? ' morphing' : ''}`,
                 `problems  ${problems.length ? problems.join(' | ') : 'none'}`
             ].join('\n');
