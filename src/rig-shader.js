@@ -20,8 +20,6 @@ uniform vec4 uRigA;        // y of: ankle, knee, crotch, spine joint
 uniform vec4 uRigB;        // y of: chest joint, neck joint; leg split x at ankle, at crotch
 uniform vec4 uRigC;        // breath amount, debug view, chest centre x, chest centre z
 uniform float uRigOn;
-uniform vec4 uFocusA;      // highlight: centre in rig space (xyz), radius
-uniform vec4 uFocusB;      // highlight: band y0, y1; amount 0..1; radius of the spreading ring
 
 // rest position in rig space, kept from the centre hook for the colour hook (which is handed
 // the already-skinned centre)
@@ -130,21 +128,6 @@ void modifySplatColor(vec3 center, inout vec4 color) {
                  w[8] * vec3(1.0, 0.9, 0.3);
         color.rgb = mix(color.rgb, c * (0.35 + luma), 0.75);
     }
-
-    // highlight: everything outside the chosen piece drops back to a dim grey, and a ring of
-    // light spreads over the surface from the callout
-    if (uFocusB.z > 0.0) {
-        float d = distance(p, uFocusA.xyz);
-        float inside = (1.0 - smoothstep(uFocusA.w, uFocusA.w + 0.05, d)) *
-                       smoothstep(uFocusB.x - 0.025, uFocusB.x + 0.025, p.y) *
-                       (1.0 - smoothstep(uFocusB.y - 0.025, uFocusB.y + 0.025, p.y));
-        vec3 dim = mix(color.rgb, vec3(luma), 0.8) * 0.3;
-        vec3 lit = mix(dim, color.rgb * 1.08, inside);
-        float e = (d - uFocusB.w) / 0.025;
-        float ring = exp(-e * e) * (1.0 - smoothstep(0.45, 1.1, uFocusB.w));
-        lit += vec3(0.75, 0.85, 1.0) * ring * 0.55;
-        color.rgb = mix(color.rgb, lit, uFocusB.z);
-    }
 }
 `;
 
@@ -158,8 +141,6 @@ uniform uRigA: vec4f;
 uniform uRigB: vec4f;
 uniform uRigC: vec4f;
 uniform uRigOn: f32;
-uniform uFocusA: vec4f;
-uniform uFocusB: vec4f;
 
 var<private> gRigRest: vec3f;
 
@@ -271,18 +252,6 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         rgb = mix(rgb, c * (0.35 + luma), 0.75);
     }
 
-    if (uniform.uFocusB.z > 0.0) {
-        let d = distance(p, uniform.uFocusA.xyz);
-        let inside = (1.0 - smoothstep(uniform.uFocusA.w, uniform.uFocusA.w + 0.05, d)) *
-                     smoothstep(uniform.uFocusB.x - 0.025, uniform.uFocusB.x + 0.025, p.y) *
-                     (1.0 - smoothstep(uniform.uFocusB.y - 0.025, uniform.uFocusB.y + 0.025, p.y));
-        let dim = mix(rgb, vec3f(luma), 0.8) * 0.3;
-        var lit = mix(dim, rgb * 1.08, inside);
-        let e = (d - uniform.uFocusB.w) / 0.025;
-        let ring = exp(-e * e) * (1.0 - smoothstep(0.45, 1.1, uniform.uFocusB.w));
-        lit += vec3f(0.75, 0.85, 1.0) * ring * 0.55;
-        rgb = mix(rgb, lit, uniform.uFocusB.z);
-    }
     *color = vec4f(rgb, (*color).a);
 }
 `;

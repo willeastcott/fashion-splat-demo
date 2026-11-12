@@ -13,12 +13,13 @@ Built with the [PlayCanvas](https://playcanvas.com) engine. The captures are by
 
 ## What to try
 
-- **Leave it alone.** Until you touch it, the demo runs itself: the camera drifts, each piece is
-  picked out in turn, and the outfit changes.
+- **Leave it alone.** Until you touch it, the demo runs itself: the camera drifts, goes in to
+  each piece in turn, pulls back, and the outfit changes.
 - **Pick an outfit** with the buttons at the bottom.
 - **Drag to orbit, scroll or pinch to zoom.** The head turns to follow you, and labels move to
   whichever side of the body their piece is on. Orbit behind for the back of each outfit.
-- **Hover or tap a label** to light up that piece.
+- **Click or tap a label** and the camera comes in to frame that piece; drag to look round it,
+  and click or tap anywhere else to go back.
 - **Open Controls** (bottom left, desktop only) for the idle strength, a view of the rig's bone
   weights, and presentation mode.
 - **Press P** for presentation mode: the same self-running show with the controls and pointer

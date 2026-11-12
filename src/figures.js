@@ -14,8 +14,9 @@
 // invented for the demo; they do not describe the real garments in the captures.
 //   pos    - a point on the garment's surface, found with tools/anchor.mjs
 //   normal - which way that surface faces; the callout hides when it faces away from the camera
-//   focus  - what lights up while the callout is hovered: a height band (y), a sphere of
-//            radius r around pos, or both
+//   focus  - how much of the figure the piece takes up, for the camera to frame when the
+//            callout is picked: a band of heights (y), or a sphere of radius r around pos.
+//            It is rough: nothing in the captures says which garment a gaussian belongs to
 //   of     - marks a second callout for a piece that already has one, so it is priced once
 // Callouts pair up across outfits by position in the list: during a morph, callout i of one
 // outfit flies to callout i of the next.
