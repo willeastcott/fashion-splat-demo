@@ -81,10 +81,19 @@ The README explains how each part works; read it first.
 ## Media
 
 `public/social.jpg` is the link-preview image, `media/morph.gif` is the README animation, and
-`media/clip-*.mp4` are share clips. They were rendered from the running app, frame by frame at
-a fixed 30 fps, by freezing the app's clock (`app.timeScale = 0`), advancing it by hand
-(`app.fire('update', 1 / 30)`) and compositing the canvas with the page's labels. Regenerate
-them if the look of the demo changes noticeably.
+`media/clip-*.mp4` are share clips. Regenerate them if the look of the demo changes noticeably.
+
+The clips are made by `tools/capture-video.mjs` (add `--shape=vertical` for the upright one),
+with the dev server running. It opens the page in headless Chrome with the GPU, takes its clock
+away, steps it a sixtieth of a second at a time, photographs the whole page after each step
+and pipes the frames to ffmpeg. Timers and CSS animations run on the stepped clock too. It
+films the full captures with view-dependent colour (`?detail=sh`), so it needs
+`public/morph-sh`. About five minutes a clip. Each replaced clip adds its full size to the
+history, so do not re-render them idly.
+
+The image and the animation were rendered from the running app in the same spirit but by
+hand: the app's clock frozen (`app.timeScale = 0`) and advanced a frame at a time
+(`app.fire('update', 1 / 30)`), and the canvas composited with the page's labels.
 
 ## Known gaps
 
@@ -131,8 +140,8 @@ them if the look of the demo changes noticeably.
   which the 8-bit store clips (a quarter of the hoodie's gaussians are a little over 1).
 - `splat-transform`'s decimation is not bit-repeatable, so a rebuilt lite or standard pack
   differs slightly from the committed one even with nothing else changed.
-- The media (`public/social.jpg`, `media/*`) were rendered before view-dependent colour was
-  added, and before the highlight was removed and the show began going in to each piece. They
-  have not been regenerated, so the README animation and the clips show the old look.
+- `public/social.jpg` and `media/morph.gif` were rendered before view-dependent colour was
+  added and before the highlight was removed. They have not been regenerated, so the link
+  preview and the README animation show the old look. The clips are current.
 - Joints were placed by eye from plots.
 - No licence has been chosen for the code.
