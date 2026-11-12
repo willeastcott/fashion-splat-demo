@@ -21,6 +21,12 @@ The README explains how each part works; read it first.
   tried and rejected. The current morph (two waves with a band of dots between them, after the
   engine's `scripts/esm/gsplat/reveal-*.mjs` effects) was accepted. The turn is still available
   under Controls but is off by default.
+- **No highlight on a piece.** Picking a piece used to dim the rest of the figure. It was
+  removed at the owner's request because it could not isolate a garment: nothing in the
+  captures says which garment a gaussian belongs to, so a piece is only a band of heights or a
+  sphere, and the highlight spilled onto hands, hems and whatever was worn underneath. Do not
+  bring it back without a garment label per gaussian. Picking a piece now brings the camera in
+  to it instead (`src/closeup.js`), and the show does the same.
 - **Credit.** The captures are CC BY 4.0 by Christoph Schindelar. Keep the credit visible in the
   app, in the share image and in the README.
 - **Product names and prices are placeholders** and say so in the README. Do not present them as
@@ -38,6 +44,7 @@ The README explains how each part works; read it first.
 | `src/callouts.js`, `src/shop.js` | Labels that ride the rig; look header, sizes and bag |
 | `src/stage.js` | Floor, contact shadows, bloom and vignette |
 | `src/director.js` | The scripted camera and show used when the demo runs itself |
+| `src/closeup.js` | Framing a piece, and the camera move in to a picked piece and back out |
 | `tools/build-morph.mjs` | Pairs gaussians across outfits and writes the packs |
 | `tools/anchor.mjs`, `tools/plot.mjs` | Find surface points for callouts; plot a capture to place joints |
 
@@ -109,6 +116,7 @@ them if the look of the demo changes noticeably.
 - `splat-transform`'s decimation is not bit-repeatable, so a rebuilt lite or standard pack
   differs slightly from the committed one even with nothing else changed.
 - The media (`public/social.jpg`, `media/*`) were rendered before view-dependent colour was
-  added and have not been regenerated.
+  added, and before the highlight was removed and the show began going in to each piece. They
+  have not been regenerated, so the README animation and the clips show the old look.
 - Joints were placed by eye from plots.
 - No licence has been chosen for the code.

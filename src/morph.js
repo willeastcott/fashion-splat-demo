@@ -410,6 +410,41 @@ const toHalf = (value) => {
     return (sign | (exp << 10) | (mant >>> 13)) + ((mant >>> 12) & 1);
 };
 
+// How much room an outfit takes up within each of some bands of height, for the camera to
+// frame a piece by (see src/closeup.js). Stray gaussians are left out: each side of a box is
+// where half a percent of the band's gaussians lie beyond it.
+const measureBands = (pos, col, bands) => {
+    const BINS = 512, FROM = -1, SPAN = 3.5;       // 7 mm steps over -1 m to 2.5 m
+    const hist = bands.map(b => (b ? [new Uint32Array(BINS), new Uint32Array(BINS), new Uint32Array(BINS)] : null));
+    const count = new Uint32Array(bands.length);
+    for (let k = 0, N = pos.length / 3; k < N; k++) {
+        if (col[k * 4 + 3] < 51) continue;          // too faint to matter, or a hidden repeat
+        const y = pos[k * 3 + 1];
+        for (let j = 0; j < bands.length; j++) {
+            const b = bands[j];
+            if (!b || y < b[0] || y > b[1]) continue;
+            count[j]++;
+            for (let a = 0; a < 3; a++) {
+                hist[j][a][Math.min(BINS - 1, Math.max(0, Math.floor((pos[k * 3 + a] - FROM) / SPAN * BINS)))]++;
+            }
+        }
+    }
+    return bands.map((b, j) => {
+        if (!b || count[j] === 0) return null;
+        const beyond = count[j] * 0.005;
+        const min = [0, 0, 0], max = [0, 0, 0];
+        for (let a = 0; a < 3; a++) {
+            const h = hist[j][a];
+            let lo = 0, hi = BINS - 1;
+            for (let n = h[lo]; n <= beyond; n += h[lo]) lo++;
+            for (let n = h[hi]; n <= beyond; n += h[hi]) hi--;
+            min[a] = FROM + lo / BINS * SPAN;
+            max[a] = FROM + (hi + 1) / BINS * SPAN;
+        }
+        return { min, max };
+    });
+};
+
 const smooth = t => t * t * (3 - 2 * t);
 
 // height the wave of a morph is measured against, metres (a little above the tallest figure)
@@ -470,9 +505,11 @@ export class Morph {
      * @param {string} baseUrl - Folder holding meta.json and the .pack files.
      * @param {string[]} names - Figure names, in outfit order.
      * @param {(fraction: number) => void} onProgress - Called as the first outfit downloads.
+     * @param {(number[]|null)[][]} [bands] - For each outfit, bands of height (bottom, top) to
+     * measure it within as it loads; the boxes found are in morph.extents, in the same order.
      * @returns {Promise<Morph>} The morph.
      */
-    static async load(device, baseUrl, names, onProgress) {
+    static async load(device, baseUrl, names, onProgress, bands) {
         if (names.length !== OUTFITS) throw new Error(`expected ${OUTFITS} outfits`);
         const res = await fetch(`${baseUrl}/meta.json`);
         // a dev server answers a missing file with the app's own HTML, so check the type too
@@ -524,6 +561,8 @@ export class Morph {
         morph.count = N;
         morph.centers = names.map(() => null);
         morph.ready = names.map(() => false);
+        morph.bands = bands ?? names.map(() => []);
+        morph.extents = names.map(() => null);
 
         await morph.loadOutfit(0, onProgress);
 
@@ -564,6 +603,7 @@ export class Morph {
         }));
         const bytes = new Uint8Array(await new Response(counted.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
         const { pos, rot, scl, col, label, excess } = decodeOutfit(bytes, this.meta, fig);
+        this.extents[i] = measureBands(pos, col, this.bands[i]);
 
         if (this.sh) {
             // this outfit's rows of the palette, as the values the codebook stands for

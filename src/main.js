@@ -22,6 +22,7 @@ import {
 import { CameraControls } from 'playcanvas/scripts/esm/camera-controls.mjs';
 
 import { Callouts } from './callouts.js';
+import { Closeup } from './closeup.js';
 import { Director } from './director.js';
 import { figureOrder, figures } from './figures.js';
 import { Morph } from './morph.js';
@@ -117,6 +118,10 @@ const fallbacks = { lite: ['lite', 'standard', 'full'], standard: ['standard', '
 // relative to wherever the app is hosted, so it also works from a sub-folder of a site
 const base = import.meta.env.BASE_URL;
 
+// The pieces that are given as a band of heights (see src/figures.js). Each outfit is measured
+// within its bands as it loads, so that the camera can frame a piece by what is really there.
+const bands = defs.map(def => def.callouts.map(callout => callout.focus?.y ?? null));
+
 // only the first outfit is fetched before the app starts; the others follow in the background
 let morph;
 let loadedTier = '';
@@ -124,7 +129,7 @@ for (const tier of fallbacks[wanted]) {
     try {
         morph = await Morph.load(device, `${base}${TIERS[tier]}`, figureOrder, (p) => {
             statusBar.style.width = `${Math.round(p * 100)}%`;
-        });
+        }, bands);
         loadedTier = tier;
         break;
     } catch (err) {
@@ -199,6 +204,7 @@ const ui = {
     idle: el('idle'),
     follow: el('follow'),
     weights: el('weights'),
+    zoom: el('zoom'),
     intensity: el('intensity'),
     intensityValue: document.getElementById('intensityValue'),
     outfits: document.getElementById('outfits')
@@ -258,7 +264,14 @@ const callouts = new Callouts(
 );
 
 // ---- presentation mode ---------------------------------------------------------------------
-const director = new Director({ camera, controls, pivot: PIVOT, callouts, morph, change, defs });
+// picking a piece brings the camera in to it; see src/closeup.js
+const closeup = new Closeup({ camera, controls, pivot: PIVOT, aspect: () => canvas.width / canvas.height });
+// what it needs to know of each figure: how tall it stands, and the room each piece takes up
+const bodies = defs.map((def, i) => ({
+    top: morph.meta.figures[figureOrder[i]].topY,
+    box: callout => morph.extents[i]?.[def.callouts.indexOf(callout)] ?? null
+}));
+const director = new Director({ camera, controls, pivot: PIVOT, callouts, closeup, bodies, morph, change, defs });
 director.distance = frame.distance - 0.05;
 const hint = document.getElementById('hint');
 
@@ -270,6 +283,14 @@ window.addEventListener('resize', () => {
     PIVOT.y = frame.height;
     director.distance = frame.distance - 0.05;
     if (!director.active) {
+        // let go of any piece that was picked. If the camera was on its way to or from one,
+        // the controls are off and have lost track of it: have them take it up where it is
+        if (closeup.state === 'in' || closeup.state === 'out') {
+            controls.enabled = true;
+            controls.focusPoint = closeup.focus;
+        }
+        closeup.cancel();
+        callouts.pinned = -1;
         const back = camera.forward.clone().mulScalar(-frame.distance).add(PIVOT);
         controls.reset(PIVOT, back);
     }
@@ -316,11 +337,19 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'p' || e.key === 'P') setPresenting(!presenting);
     if (e.key === 'Escape' && presenting) setPresenting(false);
 });
-canvas.addEventListener('pointerdown', () => {
+// A tap or click on the scene lets go of a piece that was picked. A drag does not: that is the
+// viewer looking round the piece the camera has come in to.
+let press = null;
+canvas.addEventListener('pointerdown', (e) => {
     // a tap or click on the scene leaves presentation mode, since a phone has no keys
     if (presenting) setPresenting(false);
-    // and lets go of a piece that was tapped to keep it lit
-    callouts.pinned = -1;
+    press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now() };
+});
+canvas.addEventListener('pointerup', (e) => {
+    if (!press || press.id !== e.pointerId) return;
+    const tap = Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8 && performance.now() - press.at < 500;
+    press = null;
+    if (tap) callouts.pinned = -1;
 });
 if (params.has('present')) setPresenting(true);
 
@@ -363,6 +392,17 @@ app.on('update', (dt) => {
     }
     director.update(dt);
 
+    // a piece picked by hand brings the camera in; the show goes in to pieces too, but moves
+    // the camera itself
+    closeup.enabled = ui.zoom.checked;
+    if (director.active) {
+        closeup.cancel();
+    } else {
+        const picked = callouts.pinned >= 0 && !morph.busy ? callouts.slots[callouts.pinned].def : null;
+        closeup.follow(picked, bodies[morph.from]);
+        closeup.update(dt);
+    }
+
     // a device that cannot keep up renders at a lower resolution, a step at a time
     if (!morph.busy && !document.hidden) {
         slow = dt > 1 / 28 ? slow + dt : Math.max(0, slow - dt);
@@ -400,7 +440,6 @@ app.on('update', (dt) => {
     // they step aside while the figure turns, and come back on the new outfit
     callouts.enabled = ui.labels.checked && !turning;
     callouts.update(dt, { camera, figure, rig, morph });
-    callouts.applyFocus(material);
     shop.update(morph);
 
     stage.effects = ui.effects.checked;
@@ -410,4 +449,4 @@ app.on('update', (dt) => {
 });
 
 // handy for poking at things from the console
-window.demo = { app, camera, figure, rig, morph, material, device, callouts, shop, change, stage, director };
+window.demo = { app, camera, figure, rig, morph, material, device, callouts, shop, change, stage, director, closeup };

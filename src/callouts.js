@@ -32,7 +32,7 @@ export class Callouts {
     /** Slot under the pointer, or -1. */
     hover = -1;
 
-    /** Slot clicked to keep its highlight on, or -1. */
+    /** Slot picked by a click or tap, or by the show, or -1. */
     pinned = -1;
 
     /**
@@ -50,8 +50,6 @@ export class Callouts {
         root.appendChild(this.svg);
         const count = Math.max(...defs.map(d => d.callouts.length));
         this.slots = Array.from({ length: count }, (_, i) => this._createSlot(i));
-        // the piece lit up in the splat shader
-        this.focus = { def: null, amount: 0, ring: 10 };
     }
 
     _createSlot(i) {
@@ -251,22 +249,10 @@ export class Callouts {
             }
         }
 
-        // ---- highlight ------------------------------------------------------------------------
+        // ---- the label pointed at or picked stands out: the others are drawn fainter ------------
         if (morph.busy) this.pinned = -1;
         let active = morph.busy ? -1 : (this.hover >= 0 ? this.hover : this.pinned);
         if (active >= 0 && this.slots[active].alpha < 0.5) active = -1;
-        const f = this.focus;
-        const lit = active >= 0 ? this.slots[active].def : null;
-        if (lit && lit !== f.def) {
-            f.def = lit;
-            f.ring = 0;
-        }
-        f.amount += ((lit ? 1 : 0) - f.amount) * ease(lit ? 9 : 7, dt);
-        f.ring += dt * 1.25;
-        if (!lit && f.amount < 0.004) {
-            f.amount = 0;
-            f.def = null;
-        }
 
         // ---- animate and draw -----------------------------------------------------------------
         this.slots.forEach((slot, i) => {
@@ -320,19 +306,5 @@ export class Callouts {
             slot.halo.setAttribute('cx', ax);
             slot.halo.setAttribute('cy', ay);
         });
-    }
-
-    /** Push the highlight to the splat material (see modifySplatColor in rig-shader.js). */
-    applyFocus(material) {
-        const f = this.focus;
-        const d = f.def;
-        if (!d || f.amount <= 0) {
-            material.setParameter('uFocusA', [0, 0, 0, 10]);
-            material.setParameter('uFocusB', [-1, 3, 0, 10]);
-            return;
-        }
-        const y = d.focus?.y ?? [-1, 3];
-        material.setParameter('uFocusA', [d.pos[0], d.pos[1], d.pos[2], d.focus?.r ?? 10]);
-        material.setParameter('uFocusB', [y[0], y[1], f.amount, f.ring]);
     }
 }
